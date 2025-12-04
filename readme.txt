@@ -1,0 +1,4 @@
+init.charaters_key用于查询全体角色键值对和数据
+init.global_key用于查询全体变量的键值对和数据
+init.chara_ids存储了加载的全部角色id，用于反向查询
+inti.globalid同上
