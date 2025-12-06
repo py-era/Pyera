@@ -158,7 +158,6 @@ class SimpleERAConsole:
                 (cursor_x, input_y + 20),
                 2
             )
-    
     def quit(self):
         """退出程序"""
         self.running = False
@@ -171,34 +170,40 @@ class thethings:
     def __init__(self):
         self.console=SimpleERAConsole()
         self.input=""
+        self.charater_pwds={}
         self.main()
+        #初始化角色位置
     def text(self):
         self.console.PRINT('[1]测试文本')
         if self.input=='1':
             self.console.PRINT("GREEN",(0,255,0))
             self.console.PRINT("BLUE",(0,0,255))
             self.console.PRINT("RED",(255,0,0))
+    def getpwd(self,id='0'):
+        self.console.PRINT('[0]查询位置')
+        mypwd=self.charater_pwds[id]
+        if self.input=='0':
+            self.console.PRINT(f"{self.console.init.charaters_key[id].get('名前')}当前位置....")
+            self.console.PRINT(f"[{self.console.init.global_key['map'][mypwd['大地图']]}]"+f"[{self.console.init.global_key['map'][mypwd['小地图']]}]")
     def map(self):
+        #注意，如果您需要在口上中设定角色的移动，请直接修改map.json，map会自动更新角色当前位置
         import json
         with open('./json/map/map.json', 'r', encoding='utf-8') as f:
             map_data = json.load(f)
             #现在我们有一个map的字典了
-        self.console.PRINT('[0]查询位置')
-        charater_pwds={}
         for i in self.console.init.chara_ids:
-            charapwd={}
-            for big_map,small_map in map_data.items():
-                for small_map,charater_list in small_map.items():
-                    for charater_id in charater_list:
-                        charapwd[charater_id]={
+            self.charater_pwds[i]={
+                '大地图':'10000',
+                '小地图':'10000'
+            }
+        for big_map,small_maps in map_data.items():
+            for small_map,charater_list in small_maps.items():
+                for charater_id in charater_list:
+                    if charater_id in self.charater_pwds:
+                        self.charater_pwds[charater_id]={
                             '大地图':big_map,
                             '小地图':small_map
                         }
-            charater_pwds[i]=charapwd
-        mypwd=charater_pwds['0']['0']
-        if self.input=='0':
-            self.console.PRINT("您当前位置....")
-            self.console.PRINT(f"[{self.console.init.global_key['map'][mypwd['大地图']]}]"+f"[{self.console.init.global_key['map'][mypwd['小地图']]}]")
     def main(self):
         running = True
         while running:
@@ -207,10 +212,11 @@ class thethings:
         # 处理用户输入
             if self.input.lower() == "quit":
                 running = False
-            elif self.input:#==============================================
-                            #===================在这里输入你的事件===========
-                        
+            elif self.input:
+                #==============================================
+                #===================在这里输入你的事件===========
                 self.map()
+                self.getpwd(id='1')
                 self.text()
                 self.console.PRINT("")#默认没有任何事件处理
         
