@@ -9,7 +9,7 @@ class EventManager:
     def __init__(self, console_instance):
         self.console = console_instance
         self.events = {}  # 存储事件函数
-        self.eventid={}#存事件的对应id
+        self.eventid={}#存事件的对应id，目前还没什么用
         self.load_events()
     def load_events(self):
         """动态加载事件文件"""
@@ -496,7 +496,6 @@ class thethings:
                 #在这里添加事件
                 self.event_manager.trigger_event('start',self)
                 self.console.PRINT("")
-            
             # 处理退出事件
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
