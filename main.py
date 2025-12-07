@@ -9,6 +9,7 @@ class EventManager:
     def __init__(self, console_instance):
         self.console = console_instance
         self.events = {}  # 存储事件函数
+        self.eventid={}#存事件的对应id
         self.load_events()
     
     def load_events(self):
@@ -31,8 +32,10 @@ class EventManager:
                     for attr_name in dir(module):
                         if attr_name.startswith("event_"):
                             event_func = getattr(module, attr_name)
+                            event_id=getattr(event_func,'event_trigger',event_key)#因为要把对应id读取进键值对应表所以这里直接读取他的触发按键
                             event_key = attr_name[6:]  # 去掉 "event_"
                             self.events[event_key] = event_func
+                            self.eventid[event_id]=event_key
                             self.console.PRINT(f"已加载事件: {event_key}")
                 except Exception as e:
                     self.console.PRINT(f"加载事件失败 {file}: {e}", (255, 200, 200))
@@ -482,164 +485,6 @@ class thethings:
         self.event_manager = EventManager(self.console)
         self.charater_pwds = {}
         self.main()
-    def music_control(self):
-        """音乐控制功能"""
-        if not self.console.music_box:
-            self.console.PRINT("音乐系统未初始化", colors=(255, 200, 200))
-            self.console.PRINT("按任意键继续...")
-            self.console.INPUT()
-            return
-        
-        running = True
-        while running:
-            self.console.output_lines = []
-            
-            self.console.PRINT("════════════ 音乐控制 ════════════")
-            
-            # 显示当前音乐状态
-            status = self.console.music_box.get_status()
-            current_volume = self.console.music_box.get_volume()
-            current_pos = self.console.music_box.get_position()
-            
-            self.console.PRINT(f"状态: {status}")
-            if self.console.current_music_name:
-                self.console.PRINT(f"当前音乐: {self.console.current_music_name}")
-            elif self.console.music_box.url:
-                music_name = os.path.basename(self.console.music_box.url)
-                self.console.PRINT(f"当前音乐: {music_name}")
-            else:
-                self.console.PRINT("当前音乐: 无")
-            
-            self.console.PRINT(f"音量: {current_volume:.2f}")
-            if self.console.music_box.is_playing and not self.console.music_box.is_paused:
-                self.console.PRINT(f"播放位置: {current_pos:.1f}秒")
-            
-            self.console.PRINT("─" * 40)
-            self.console.PRINT("[1] 播放音乐        [2] 暂停音乐        [3] 继续播放        [4] 停止音乐")
-            self.console.PRINT("[5] 选择音乐        [6] 增大音量        [7] 减小音量        [8] 设置音量")
-            self.console.PRINT("[9] 显示音乐列表        [0] 返回")
-            self.console.PRINT("请输入选择:")
-            
-            choice = self.console.INPUT()
-            
-            if choice == '0':
-                running = False
-            elif choice == '1':
-                if self.console.music_box.url:
-                    self.console.music_box.play(loops=-1, fade_in=1000)
-                    self.console.PRINT("音乐开始播放")
-                else:
-                    self.console.PRINT("请先选择音乐文件", colors=(255, 200, 200))
-                self.console.PRINT("按任意键继续...")
-                self.console.INPUT()
-            elif choice == '2':
-                self.console.music_box.pause()
-                self.console.PRINT("音乐已暂停")
-                self.console.PRINT("按任意键继续...")
-                self.console.INPUT()
-            elif choice == '3':
-                self.console.music_box.countion()
-                self.console.PRINT("音乐继续播放")
-                self.console.PRINT("按任意键继续...")
-                self.console.INPUT()
-            elif choice == '4':
-                self.console.music_box.stop()
-                self.console.PRINT("音乐已停止")
-                self.console.PRINT("按任意键继续...")
-                self.console.INPUT()
-            elif choice == '5':
-                # 显示音乐列表供选择
-                if not self.console.music_list:
-                    self.console.PRINT("音乐列表为空", colors=(255, 200, 200))
-                    self.console.PRINT("按任意键继续...")
-                    self.console.INPUT()
-                    continue
-                
-                self.console.output_lines = []
-                self.console.PRINT("════════════ 音乐列表 ════════════")
-                
-                music_names = list(self.console.music_list.keys())
-                for i, music_name in enumerate(music_names, 1):
-                    self.console.PRINT(f"[{i}] {music_name}")
-                
-                self.console.PRINT("─" * 40)
-                self.console.PRINT("请输入要播放的音乐编号（0返回）:")
-                
-                music_choice = self.console.INPUT()
-                if music_choice and music_choice.isdigit():
-                    choice_num = int(music_choice)
-                    if 1 <= choice_num <= len(music_names):
-                        selected_music_name = music_names[choice_num - 1]
-                        selected_music_path = self.console.music_list[selected_music_name]
-                        
-                        if os.path.exists(selected_music_path):
-                            success = self.console.music_box.newurl(selected_music_path)
-                            if success:
-                                self.console.current_music_name = selected_music_name
-                                self.console.music_box.play(loops=-1)
-                                self.console.PRINT(f"已切换到: {selected_music_name}")
-                            else:
-                                self.console.PRINT("切换音乐失败", colors=(255, 200, 200))
-                        else:
-                            self.console.PRINT(f"音乐文件不存在: {selected_music_path}", colors=(255, 200, 200))
-                    elif choice_num == 0:
-                        pass  # 返回
-                    else:
-                        self.console.PRINT("无效的选择", colors=(255, 200, 200))
-                else:
-                    self.console.PRINT("无效的输入", colors=(255, 200, 200))
-                
-                self.console.PRINT("按任意键继续...")
-                self.console.INPUT()
-            elif choice == '6':
-                new_volume = min(1.0, current_volume + 0.1)
-                self.console.music_box.set_volume(new_volume)
-                self.console.PRINT(f"音量增大到 {new_volume:.2f}")
-                self.console.PRINT("按任意键继续...")
-                self.console.INPUT()
-            elif choice == '7':
-                new_volume = max(0.0, current_volume - 0.1)
-                self.console.music_box.set_volume(new_volume)
-                self.console.PRINT(f"音量减小到 {new_volume:.2f}")
-                self.console.PRINT("按任意键继续...")
-                self.console.INPUT()
-            elif choice == '8':
-                self.console.PRINT("请输入音量 (0.0-1.0):")
-                vol_input = self.console.INPUT()
-                try:
-                    vol_value = float(vol_input)
-                    if 0.0 <= vol_value <= 1.0:
-                        self.console.music_box.set_volume(vol_value)
-                        self.console.PRINT(f"音量已设置为 {vol_value:.2f}")
-                    else:
-                        self.console.PRINT("音量值必须在0.0到1.0之间", colors=(255, 200, 200))
-                except ValueError:
-                    self.console.PRINT("请输入有效的数字", colors=(255, 200, 200))
-                self.console.PRINT("按任意键继续...")
-                self.console.INPUT()
-            elif choice == '9':
-                # 显示音乐列表
-                self.console.output_lines = []
-                self.console.PRINT("════════════ 全部音乐 ════════════")
-                
-                if not self.console.music_list:
-                    self.console.PRINT("音乐列表为空", colors=(255, 200, 200))
-                else:
-                    music_names = list(self.console.music_list.keys())
-                    for i, music_name in enumerate(music_names, 1):
-                        path = self.console.music_list[music_name]
-                        exists = "✓" if os.path.exists(path) else "✗"
-                        self.console.PRINT(f"{i:2d}. {music_name} [{exists}]")
-                        self.console.PRINT(f"    路径: {path}", colors=(180, 180, 180))
-                
-                self.console.PRINT("─" * 40)
-                self.console.PRINT("按任意键继续...")
-                self.console.INPUT()
-            else:
-                self.console.PRINT("无效的选择", colors=(255, 200, 200))
-                self.console.PRINT("按任意键继续...")
-                self.console.INPUT()
-    
     def map(self):
         import json
         try:
@@ -679,116 +524,6 @@ class thethings:
                 self.console.PRINT(f"[{self.console.init.global_key['map'][mypwd['大地图']]}]" + f"[{self.console.init.global_key['map'][mypwd['小地图']]}]")
         else:
             self.console.PRINT(f"角色ID {id} 不存在", colors=(255, 200, 200))
-    def shop(self):
-        self.console.PRINT("[3]商店")
-        if self.input == '3':
-            running = True
-            page = 0
-            items_per_page = 12
-            
-            # 检查是否有物品数据
-            if not hasattr(self.console.init, 'global_key') or 'Item' not in self.console.init.global_key:
-                self.console.PRINT("商店数据未加载", colors=(255, 200, 200))
-                self.console.PRINT("按任意键继续...")
-                self.console.INPUT()
-                return
-            
-            items_data = self.console.init.global_key['Item']
-            item_ids = list(items_data.keys())
-            
-            while running:
-                self.console.output_lines = []
-                
-                self.console.PRINT("════════════ 商店 ════════════")
-                
-                if len(item_ids) == 0:
-                    self.console.PRINT("商店目前没有商品")
-                else:
-                    total_pages = (len(item_ids) + items_per_page - 1) // items_per_page
-                    start_idx = page * items_per_page
-                    end_idx = min(start_idx + items_per_page, len(item_ids))
-                    
-                    self.console.PRINT(f"第 {page + 1}/{total_pages} 页")
-                    self.console.PRINT("─" * 40)
-                    
-                    for i in range(start_idx, end_idx):
-                        item_id = item_ids[i]
-                        item_info = items_data[item_id]
-                        
-                        item_name = item_info.get('name', f'物品{item_id}')
-                        price = item_info.get('price', 0)
-                        
-                        display_num = i - start_idx + 1
-                        self.console.PRINT(f"{display_num:2d}. {item_name:<20} {price:>5}金币")
-                    
-                    self.console.PRINT("─" * 40)
-                    self.console.PRINT("n:下一页  p:上一页  数字:查看详情  e:退出")
-                    self.console.PRINT("请输入选择:")
-                    
-                    thisinput = self.console.INPUT().lower()
-                    
-                    if thisinput == 'e':
-                        running = False
-                    elif thisinput == 'n':
-                        if page < total_pages - 1:
-                            page += 1
-                        else:
-                            self.console.PRINT("已经是最后一页了")
-                            self.console.PRINT("按任意键继续...")
-                            self.console.INPUT()
-                    elif thisinput == 'p':
-                        if page > 0:
-                            page -= 1
-                        else:
-                            self.console.PRINT("已经是第一页了")
-                            self.console.PRINT("按任意键继续...")
-                            self.console.INPUT()
-                    elif thisinput.isdigit():
-                        selected = int(thisinput)
-                        if 1 <= selected <= (end_idx - start_idx):
-                            actual_index = start_idx + selected - 1
-                            item_id = item_ids[actual_index]
-                            item_info = items_data[item_id]
-                            
-                            self.console.output_lines = []
-                            
-                            item_name = item_info.get('name', f'物品{item_id}')
-                            price = item_info.get('price', 0)
-                            description = item_info.get('idn', '暂无简介')
-                            
-                            self.console.PRINT(f"════════════ 物品详情 ════════════")
-                            self.console.PRINT(f"名称: {item_name}")
-                            self.console.PRINT(f"价格: {price}金币")
-                            self.console.PRINT("")
-                            self.console.PRINT("简介:")
-                            self.console.PRINT(f"  {description}")
-                            self.console.PRINT("")
-                            
-                            other_keys = [k for k in item_info.keys() if k not in ['name', 'price', 'idn']]
-                            if other_keys:
-                                self.console.PRINT("其他属性:")
-                                for key in other_keys:
-                                    self.console.PRINT(f"  {key}: {item_info[key]}")
-                            
-                            self.console.PRINT("")
-                            self.console.PRINT("1. 购买")
-                            self.console.PRINT("2. 返回商店")
-                            self.console.PRINT("请选择:")
-                            
-                            choice = self.console.INPUT()
-                            
-                            if choice == '1':
-                                self.console.PRINT(f"购买了 {item_name}，花费 {price} 金币！")
-                                self.console.PRINT("按任意键继续...")
-                                self.console.INPUT()
-                        else:
-                            self.console.PRINT("无效的选择")
-                            self.console.PRINT("按任意键继续...")
-                            self.console.INPUT()
-                    else:
-                        self.console.PRINT("无效的命令")
-                        self.console.PRINT("按任意键继续...")
-                        self.console.INPUT()
     def logevent(self):
         """显示当前已加载的事件"""
         self.console.PRINT("════════════ 已加载事件列表 ════════════", (100, 150, 255))
@@ -852,6 +587,7 @@ class thethings:
                 self.input = self.console.INPUT()
                 self.console.PRINT("[1]测试文本         [2]查询位置         [3]商店         [4]音乐控制")
                 self.console.PRINT(f"[5]显示当前音乐     [99]退出            [10]查看当前加载事件           [8]helloworld！")
+                self.console.PRINT("[100]")
                 if self.input == '99':
                     running = False
                 elif self.input:
@@ -860,9 +596,9 @@ class thethings:
                     elif self.input == '2':
                         self.getpwd()
                     elif self.input == '3':
-                        self.shop()
+                        self.event_manager.trigger_event('shop',self)
                     elif self.input == '4':
-                        self.music_control()
+                        self.event_manager.trigger_event('music_control',self)
                     elif self.input == '5':
                         if self.console.music_box:
                             status = self.console.music_box.get_status()
