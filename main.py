@@ -11,12 +11,10 @@ class EventManager:
         self.events = {}  # 存储事件函数
         self.eventid={}#存事件的对应id
         self.load_events()
-    
     def load_events(self):
         """动态加载事件文件"""
         import importlib
         import os
-        
         events_dir = "./events"  # 事件文件目录
         if not os.path.exists(events_dir):
             os.makedirs(events_dir)
@@ -32,8 +30,8 @@ class EventManager:
                     for attr_name in dir(module):
                         if attr_name.startswith("event_"):
                             event_func = getattr(module, attr_name)
-                            event_id=getattr(event_func,'event_trigger',event_key)#因为要把对应id读取进键值对应表所以这里直接读取他的触发按键
                             event_key = attr_name[6:]  # 去掉 "event_"
+                            event_id=getattr(event_func,'event_trigger',event_key)#因为要把对应id读取进键值对应表所以这里直接读取他的触发按键
                             self.events[event_key] = event_func
                             self.eventid[event_id]=event_key
                             self.console.PRINT(f"已加载事件: {event_key}")
@@ -485,145 +483,9 @@ class thethings:
         self.event_manager = EventManager(self.console)
         self.charater_pwds = {}
         self.main()
-    def map(self):
-        import json
-        try:
-            with open('./json/map/map.json', 'r', encoding='utf-8') as f:
-                map_data = json.load(f)
-            
-            # 先为所有角色设置默认位置
-            for i in self.console.init.chara_ids:
-                self.charater_pwds[i] = {
-                    '大地图': '10000',
-                    '小地图': '10001'
-                }
-            
-            # 根据map.json更新角色位置
-            for big_map, small_maps in map_data.items():
-                for small_map, charater_list in small_maps.items():
-                    for charater_id in charater_list:
-                        if charater_id in self.charater_pwds:
-                            self.charater_pwds[charater_id] = {
-                                '大地图': big_map,
-                                '小地图': small_map
-                            }
-        except Exception as e:
-            self.console.PRINT(f"加载地图数据失败: {e}", colors=(255, 200, 200))
-    def text(self):
-        self.console.PRINT('[1]测试文本')
-        if self.input == '1':
-            self.console.PRINT("GREEN", (0, 255, 0))
-            self.console.PRINT("BLUE", (0, 0, 255))
-            self.console.PRINT("RED", (255, 0, 0))
-    def getpwd(self, id='0'):
-        # 检查charater_pwds中是否有该角色
-        if id in self.charater_pwds:
-            mypwd = self.charater_pwds[id]
-            if self.input == '2':
-                self.console.PRINT(f"{self.console.init.charaters_key[id].get('名前')}当前位置....")
-                self.console.PRINT(f"[{self.console.init.global_key['map'][mypwd['大地图']]}]" + f"[{self.console.init.global_key['map'][mypwd['小地图']]}]")
-        else:
-            self.console.PRINT(f"角色ID {id} 不存在", colors=(255, 200, 200))
-    def logevent(self):
-        """显示当前已加载的事件"""
-        self.console.PRINT("════════════ 已加载事件列表 ════════════", (100, 150, 255))
-        
-        if not self.event_manager.events:
-            self.console.PRINT("未加载任何事件", colors=(255, 200, 200))
-            self.console.PRINT(f"事件目录: {os.path.abspath('./events')}", (150, 150, 150))
-        else:
-            events_count = len(self.event_manager.events)
-            self.console.PRINT(f"已加载 {events_count} 个事件:", (200, 255, 200))
-            self.console.PRINT_DIVIDER("-", 35, (100, 100, 150))
-            
-            # 显示所有事件
-            for i, (event_name, event_func) in enumerate(self.event_manager.events.items(), 1):
-                # 获取函数信息
-                func_name = event_func.__name__
-                func_module = event_func.__module__ if hasattr(event_func, '__module__') else "未知"
-                func_doc = event_func.__doc__ or "无描述"
-                
-                # 显示事件信息
-                self.console.PRINT(f"[{i:2d}] {event_name}", (200, 200, 255))
-                self.console.PRINT(f"     函数: {func_name}()", (150, 150, 200))
-                self.console.PRINT(f"     模块: {func_module}", (150, 150, 200))
-                
-                # 显示函数文档（简要说明）
-                doc_lines = func_doc.strip().split('\n')
-                if doc_lines:
-                    brief_doc = doc_lines[0].strip()[:60]  # 取第一行，最多60字符
-                    self.console.PRINT(f"     说明: {brief_doc}...", (180, 180, 180))
-                
-                # 检查是否有触发条件属性
-                if hasattr(event_func, 'event_trigger') and event_func.event_trigger:
-                    trigger = event_func.event_trigger
-                    self.console.PRINT(f"     触发: 输入 '{trigger}'", (100, 255, 100))
-                
-                self.console.PRINT("")
-        
-        self.console.PRINT_DIVIDER("=", 40, (100, 150, 255))
-        
-        # 添加事件使用提示
-        self.console.PRINT("事件使用说明:", (200, 200, 255))
-        self.console.PRINT("  1. 在 events/ 目录下创建 .py 文件", (150, 150, 200))
-        self.console.PRINT("  2. 定义以 'event_' 开头的函数", (150, 150, 200))
-        self.console.PRINT("  3. 函数接受一个参数: thethings实例", (150, 150, 200))
-        self.console.PRINT("  4. 可以使用 console.PRINT() 等方法", (150, 150, 200))
-        self.console.PRINT_DIVIDER("-", 35, (100, 100, 150))
-        self.console.PRINT("示例事件文件 (events/example.py):", (200, 200, 255))
-        self.console.PRINT("  def event_myevent(things):", (150, 150, 255))
-        self.console.PRINT("      things.console.PRINT('你好！')", (180, 180, 180))
-        self.console.PRINT("      things.console.PRINT('输入 test:')", (180, 180, 180))
-        self.console.PRINT("      if things.input == 'test':", (180, 180, 180))
-        self.console.PRINT("          things.console.PRINT('测试成功！')", (180, 180, 180))
-        
-        self.console.PRINT("")
-        self.console.PRINT("按任意键返回主菜单...")
-        self.console.INPUT()
-    def start(self):
-        if self.input == '0':
-            running = True
-            while running:
-                self.input = self.console.INPUT()
-                self.console.PRINT("[1]测试文本         [2]查询位置         [3]商店         [4]音乐控制")
-                self.console.PRINT(f"[5]显示当前音乐     [99]退出            [10]查看当前加载事件           [8]helloworld！")
-                self.console.PRINT("[100]")
-                if self.input == '99':
-                    running = False
-                elif self.input:
-                    if self.input == '1':
-                        self.text()
-                    elif self.input == '2':
-                        self.getpwd()
-                    elif self.input == '3':
-                        self.event_manager.trigger_event('shop',self)
-                    elif self.input == '4':
-                        self.event_manager.trigger_event('music_control',self)
-                    elif self.input == '5':
-                        if self.console.music_box:
-                            status = self.console.music_box.get_status()
-                            current_volume = self.console.music_box.get_volume()
-                            self.console.PRINT(f"音乐状态: {status}")
-                            self.console.PRINT(f"当前音量: {current_volume:.2f}")
-                            if self.console.current_music_name:
-                                self.console.PRINT(f"当前音乐: {self.console.current_music_name}")
-                            elif self.console.music_box.url:
-                                music_name = os.path.basename(self.console.music_box.url)
-                                self.console.PRINT(f"当前音乐: {music_name}")
-                        else:
-                            self.console.PRINT("音乐系统未初始化", colors=(255, 200, 200))
-                        self.console.PRINT("按任意键继续...")
-                        self.console.INPUT()
-                    elif self.input == '10':
-                        self.logevent()
-                    elif self.input=='8':
-                        self.event_manager.trigger_event('helloworld',self)
-                    self.console.PRINT("")
-
     def main(self):
         # 首先初始化地图数据
-        self.map()
-        
+        self.event_manager.trigger_event('map',self)
         running = True
         while running:
             self.input = self.console.INPUT()
@@ -632,7 +494,7 @@ class thethings:
                 running = False
             elif self.input:
                 #在这里添加事件
-                self.start()
+                self.event_manager.trigger_event('start',self)
                 self.console.PRINT("")
             
             # 处理退出事件
