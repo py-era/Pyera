@@ -1,4 +1,5 @@
 def event_start(this):
+    import os
     loadidlist=['1','2','3','4','5','99','10','8']#这是一个示例，如果你们也有这种需要进入的循环的话请把每一个循环中需要使用的事件id加入这种列表中并初始化
     #当然这是作为机械加载文本位置的预备功能，现在这个列表还没什么用
     start_eventid={}
@@ -9,8 +10,8 @@ def event_start(this):
         running = True
         while running:
             this.input = this.console.INPUT()
-            this.console.PRINT("[1]测试文本         [2]查询位置         [3]商店         [4]音乐控制")
-            this.console.PRINT(f"[5]显示当前音乐     [99]退出            [10]查看当前加载事件           [8]helloworld！")
+            this.console.PRINT(this.cs("[1]测试文本").click("1"),"         ",this.cs("[2]查询位置").click("2"),"         ",this.cs("[3]商店").click("3"),"         ",this.cs("[4]音乐控制").click("4"))
+            this.console.PRINT(this.cs("[5]显示当前音乐").click("5"),"     ",this.cs("[99]退出").click("99"),"            ",this.cs("[10]查看当前加载事件").click("10"),"           ",this.cs("[8]helloworld！").click("8"))
             if this.input == '99':
                 running = False
             elif this.input:

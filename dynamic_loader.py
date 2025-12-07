@@ -5,7 +5,18 @@ import json
 import time
 from typing import List, Tuple, Dict, Optional
 from enum import Enum
-
+class InlineFragment:
+    """行内片段"""
+    def __init__(self, text, color=(255, 255, 255), click_value=None):
+        self.text = str(text)
+        self.color = color
+        self.click_value = click_value
+        self.width = 0  # 将在绘制时计算
+    
+    def calculate_width(self, font):
+        """计算片段宽度"""
+        self.width = font.size(self.text)[0]
+        return self.width
 class ContentType(Enum):
     TEXT = "text"
     IMAGE = "image"
@@ -13,18 +24,33 @@ class ContentType(Enum):
     MENU = "menu"
 
 class ConsoleContent:
-    """控制台内容项"""
+    """控制台内容项 - 支持行内片段"""
     def __init__(self, content_type: ContentType, data, color=(255, 255, 255), height=30, 
-                 metadata=None):
+                 metadata=None, fragments=None):
         self.type = content_type
-        self.data = data  # 文本内容或图片路径
+        self.data = data  # 主文本内容（用于向后兼容）
         self.color = color
-        self.height = height  # 此项的高度（像素）
+        self.height = height
         self.metadata = metadata or {}
         self.timestamp = time.time()
         
+        # 行内片段（用于支持同一行内的多个部分）
+        self.fragments = fragments or []
+        if not self.fragments and self.data:
+            # 如果没有片段但有数据，创建一个默认片段
+            self.fragments = [InlineFragment(self.data, color)]
+    def add_fragment(self, fragment: InlineFragment):
+        """添加行内片段"""
+        self.fragments.append(fragment)
+    
+    def get_full_text(self):
+        """获取完整文本"""
+        if self.fragments:
+            return ''.join(f.text for f in self.fragments)
+        return self.data
+    
     def __repr__(self):
-        return f"ConsoleContent(type={self.type}, data={self.data[:50] if isinstance(self.data, str) else self.data})"
+        return f"ConsoleContent(type={self.type}, text={self.get_full_text()[:50]})"
 
 class DynamicLoader:
     """动态加载器 - 支持滚动和日志记录"""
@@ -73,6 +99,117 @@ class DynamicLoader:
         self.clickable_regions = []  # 存储所有可点击区域
         self.clickable_region_counter = 0  # 可点击区域计数器
         self.active_clickable_regions = []  # 当前显示的可点击区域
+    def add_inline_fragments(self, fragments: List[InlineFragment]) -> ConsoleContent:
+        """
+        添加行内片段到历史记录（所有片段在同一行）
+        
+        Args:
+            fragments: 行内片段列表
+            
+        Returns:
+            添加的内容项
+        """
+        # 创建内容项
+        item = ConsoleContent(
+            ContentType.TEXT,
+            "",  # 主文本为空，使用片段
+            height=self.line_height,
+            fragments=fragments,
+            metadata={'has_inline_fragments': True}
+        )
+        
+        self.history.append(item)
+        
+        # 写入日志
+        full_text = item.get_full_text()
+        self._write_to_log(full_text)
+        
+        # 为每个可点击片段创建区域记录
+        for i, fragment in enumerate(fragments):
+            if fragment.click_value:
+                self.clickable_regions.append({
+                    'id': self.clickable_region_counter,
+                    'fragment_index': i,
+                    'content_item': item,
+                    'click_value': fragment.click_value,
+                    'text': fragment.text,
+                    'type': 'inline_fragment'
+                })
+                self.clickable_region_counter += 1
+        
+        # 更新显示
+        self._update_current_display()
+        
+        # 自动滚动到底部
+        if self.scroll_offset <= 5:
+            self.scroll_to_bottom()
+        
+        return item
+    def add_clickable_parts(self, parts: List[Dict]) -> List[ConsoleContent]:
+        """
+        添加多个可点击部分到历史记录
+        
+        Args:
+            parts: 部分列表，每个元素是包含以下键的字典：
+                - 'text': 文本内容
+                - 'color': 文本颜色（可选）
+                - 'click_value': 点击时输入的文本（可选）
+                
+        Returns:
+            添加的内容项列表
+        """
+        added_items = []
+        combined_text = ""
+        
+        for part in parts:
+            text = part.get('text', '')
+            color = part.get('color', (255, 255, 255))
+            click_value = part.get('click_value')
+            
+            combined_text += text
+            
+            # 创建内容项
+            metadata = {'is_part': True, 'part_index': len(added_items)}
+            
+            if click_value is not None:
+                metadata.update({
+                    'clickable': True,
+                    'click_value': click_value,
+                    'region_id': self.clickable_region_counter
+                })
+                
+                # 记录点击区域
+                self.clickable_regions.append({
+                    'id': self.clickable_region_counter,
+                    'text': text,
+                    'click_value': click_value,
+                    'type': 'text'
+                })
+                
+                self.clickable_region_counter += 1
+            
+            item = ConsoleContent(
+                ContentType.TEXT, 
+                text, 
+                color=color,
+                height=self.line_height,
+                metadata=metadata
+            )
+            
+            self.history.append(item)
+            added_items.append(item)
+        
+        # 写入日志
+        self._write_to_log(combined_text)
+        
+        # 更新显示
+        self._update_current_display()
+        
+        # 自动滚动到底部
+        if self.scroll_offset <= 5:
+            self.scroll_to_bottom()
+        
+        return added_items
     def add_clickable_text(self, text: str, color: Tuple[int, int, int] = (255, 255, 255), 
                           click_value: str = None) -> List[ConsoleContent]:
         """
@@ -169,7 +306,7 @@ class DynamicLoader:
         
         # 遍历当前显示的内容项
         for item in self.current_display:
-            # 如果是可点击项目
+            # 检查普通文本点击区域
             if 'clickable' in item.metadata and item.metadata['clickable']:
                 # 根据项目类型计算区域
                 region_rect = None
@@ -187,17 +324,58 @@ class DynamicLoader:
                         region_rect = pygame.Rect(img_x, current_y, image.get_width(), item.height)
                 
                 if region_rect:
-                    self.active_clickable_regions.append({
-                        'id': item.metadata['region_id'],
-                        'rect': region_rect,
-                        'click_value': item.metadata['click_value'],
-                        'text': item.data if item.type == ContentType.TEXT else f"[图片] {item.data}",
-                        'type': 'text' if item.type == ContentType.TEXT else 'image'
-                    })
+                    # 查找对应的点击区域记录
+                    for region in self.clickable_regions:
+                        if region.get('content_item') == item and region.get('type') in ['text', 'image']:
+                            region['rect'] = region_rect
+                            self.active_clickable_regions.append({
+                                'id': region['id'],
+                                'rect': region_rect,
+                                'click_value': region['click_value'],
+                                'text': region['text'],
+                                'type': region['type']
+                            })
             
-            # 更新Y位置
-            current_y += item.height
-    
+            # 检查行内片段点击区域
+            elif item.fragments:
+                current_x = 10
+                
+                for i, fragment in enumerate(item.fragments):
+                    # 计算片段宽度
+                    fragment.calculate_width(self.font)
+                    
+                    # 检查是否需要换行
+                    available_width = self.screen_width - current_x - 20
+                    if fragment.width > available_width and current_x > 10:
+                        current_x = 10
+                        current_y += item.height
+                    
+                    # 如果是可点击片段
+                    if fragment.click_value:
+                        region_rect = pygame.Rect(current_x, current_y, fragment.width, item.height)
+                        
+                        # 查找对应的点击区域记录
+                        for region in self.clickable_regions:
+                            if (region.get('content_item') == item and 
+                                region.get('fragment_index') == i and 
+                                region.get('type') == 'inline_fragment'):
+                                region['rect'] = region_rect
+                                self.active_clickable_regions.append({
+                                    'id': region['id'],
+                                    'rect': region_rect,
+                                    'click_value': region['click_value'],
+                                    'text': region['text'],
+                                    'type': region['type']
+                                })
+                    
+                    current_x += fragment.width
+                
+                # 一行绘制完毕，换行
+                if item.fragments:
+                    current_y += item.height
+            else:
+                # 更新Y位置
+                current_y += item.height
     def clear_clickable_regions(self):
         """清空所有可点击区域"""
         self.clickable_regions = []
@@ -536,12 +714,7 @@ class DynamicLoader:
         }
     
     def draw(self, screen: pygame.Surface):
-        """
-        绘制内容到屏幕
-        
-        Args:
-            screen: PyGame屏幕Surface
-        """
+        """绘制内容到屏幕"""
         current_y = 10
         
         # 绘制可见内容
@@ -550,11 +723,34 @@ class DynamicLoader:
                 break
                 
             if item.type == ContentType.TEXT:
-                # 绘制文本
-                text_surface = self.font.render(item.data, True, item.color)
-                screen.blit(text_surface, (10, current_y))
-                current_y += item.height
+                current_x = 10
                 
+                # 如果有行内片段，逐个绘制
+                if item.fragments:
+                    for fragment in item.fragments:
+                        # 计算片段宽度
+                        fragment.calculate_width(self.font)
+                        
+                        # 检查是否需要换行（当前行剩余宽度不够）
+                        available_width = self.screen_width - current_x - 20
+                        if fragment.width > available_width and current_x > 10:
+                            current_x = 10
+                            current_y += item.height
+                        
+                        # 绘制文本
+                        text_surface = self.font.render(fragment.text, True, fragment.color)
+                        screen.blit(text_surface, (current_x, current_y))
+                        
+                        current_x += fragment.width
+                    
+                    # 一行绘制完毕，换行
+                    current_y += item.height
+                else:
+                    # 普通文本
+                    text_surface = self.font.render(item.data, True, item.color)
+                    screen.blit(text_surface, (10, current_y))
+                    current_y += item.height
+                    
             elif item.type == ContentType.IMAGE:
                 # 绘制图片
                 if item.data in self.image_cache:
