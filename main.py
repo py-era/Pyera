@@ -5,7 +5,43 @@ import time
 import json
 import os
 from dynamic_loader import DynamicLoader, ContentType  # 导入动态加载器
-
+class EventManager:
+    def __init__(self, console_instance):
+        self.console = console_instance
+        self.events = {}  # 存储事件函数
+        self.load_events()
+    
+    def load_events(self):
+        """动态加载事件文件"""
+        import importlib
+        import os
+        
+        events_dir = "./events"  # 事件文件目录
+        if not os.path.exists(events_dir):
+            os.makedirs(events_dir)
+        
+        # 扫描事件文件
+        for file in os.listdir(events_dir):
+            if file.endswith(".py"):
+                module_name = f"events.{file[:-3]}"
+                try:
+                    module = importlib.import_module(module_name)
+                    
+                    # 查找事件函数（以 event_ 开头的函数）
+                    for attr_name in dir(module):
+                        if attr_name.startswith("event_"):
+                            event_func = getattr(module, attr_name)
+                            event_key = attr_name[6:]  # 去掉 "event_"
+                            self.events[event_key] = event_func
+                            self.console.PRINT(f"已加载事件: {event_key}")
+                except Exception as e:
+                    self.console.PRINT(f"加载事件失败 {file}: {e}", (255, 200, 200))
+    
+    def trigger_event(self, event_name, things_instance):
+        """触发指定事件"""
+        if event_name in self.events:
+            # 传递 thethings 实例给事件函数
+            self.events[event_name](things_instance)
 class SimpleERAConsole:
     from init import initall
     
@@ -443,6 +479,7 @@ class thethings:
         # 在创建console后立即初始化所有组件
         self.console.init_all()
         self.input = ""
+        self.event_manager = EventManager(self.console)
         self.charater_pwds = {}
         self.main()
     def music_control(self):
@@ -752,14 +789,69 @@ class thethings:
                         self.console.PRINT("无效的命令")
                         self.console.PRINT("按任意键继续...")
                         self.console.INPUT()
-    
+    def logevent(self):
+        """显示当前已加载的事件"""
+        self.console.PRINT("════════════ 已加载事件列表 ════════════", (100, 150, 255))
+        
+        if not self.event_manager.events:
+            self.console.PRINT("未加载任何事件", colors=(255, 200, 200))
+            self.console.PRINT(f"事件目录: {os.path.abspath('./events')}", (150, 150, 150))
+        else:
+            events_count = len(self.event_manager.events)
+            self.console.PRINT(f"已加载 {events_count} 个事件:", (200, 255, 200))
+            self.console.PRINT_DIVIDER("-", 35, (100, 100, 150))
+            
+            # 显示所有事件
+            for i, (event_name, event_func) in enumerate(self.event_manager.events.items(), 1):
+                # 获取函数信息
+                func_name = event_func.__name__
+                func_module = event_func.__module__ if hasattr(event_func, '__module__') else "未知"
+                func_doc = event_func.__doc__ or "无描述"
+                
+                # 显示事件信息
+                self.console.PRINT(f"[{i:2d}] {event_name}", (200, 200, 255))
+                self.console.PRINT(f"     函数: {func_name}()", (150, 150, 200))
+                self.console.PRINT(f"     模块: {func_module}", (150, 150, 200))
+                
+                # 显示函数文档（简要说明）
+                doc_lines = func_doc.strip().split('\n')
+                if doc_lines:
+                    brief_doc = doc_lines[0].strip()[:60]  # 取第一行，最多60字符
+                    self.console.PRINT(f"     说明: {brief_doc}...", (180, 180, 180))
+                
+                # 检查是否有触发条件属性
+                if hasattr(event_func, 'event_trigger') and event_func.event_trigger:
+                    trigger = event_func.event_trigger
+                    self.console.PRINT(f"     触发: 输入 '{trigger}'", (100, 255, 100))
+                
+                self.console.PRINT("")
+        
+        self.console.PRINT_DIVIDER("=", 40, (100, 150, 255))
+        
+        # 添加事件使用提示
+        self.console.PRINT("事件使用说明:", (200, 200, 255))
+        self.console.PRINT("  1. 在 events/ 目录下创建 .py 文件", (150, 150, 200))
+        self.console.PRINT("  2. 定义以 'event_' 开头的函数", (150, 150, 200))
+        self.console.PRINT("  3. 函数接受一个参数: thethings实例", (150, 150, 200))
+        self.console.PRINT("  4. 可以使用 console.PRINT() 等方法", (150, 150, 200))
+        self.console.PRINT_DIVIDER("-", 35, (100, 100, 150))
+        self.console.PRINT("示例事件文件 (events/example.py):", (200, 200, 255))
+        self.console.PRINT("  def event_myevent(things):", (150, 150, 255))
+        self.console.PRINT("      things.console.PRINT('你好！')", (180, 180, 180))
+        self.console.PRINT("      things.console.PRINT('输入 test:')", (180, 180, 180))
+        self.console.PRINT("      if things.input == 'test':", (180, 180, 180))
+        self.console.PRINT("          things.console.PRINT('测试成功！')", (180, 180, 180))
+        
+        self.console.PRINT("")
+        self.console.PRINT("按任意键返回主菜单...")
+        self.console.INPUT()
     def start(self):
         if self.input == '0':
             running = True
             while running:
                 self.input = self.console.INPUT()
                 self.console.PRINT("[1]测试文本         [2]查询位置         [3]商店         [4]音乐控制")
-                self.console.PRINT("[5]显示当前音乐         [99]退出")
+                self.console.PRINT(f"[5]显示当前音乐     [99]退出            [10]查看当前加载事件           [8]helloworld！")
                 if self.input == '99':
                     running = False
                 elif self.input:
@@ -786,7 +878,12 @@ class thethings:
                             self.console.PRINT("音乐系统未初始化", colors=(255, 200, 200))
                         self.console.PRINT("按任意键继续...")
                         self.console.INPUT()
+                    elif self.input == '10':
+                        self.logevent()
+                    elif self.input=='8':
+                        self.event_manager.trigger_event('helloworld',self)
                     self.console.PRINT("")
+
     def main(self):
         # 首先初始化地图数据
         self.map()
@@ -799,7 +896,6 @@ class thethings:
                 running = False
             elif self.input:
                 #在这里添加事件
-                
                 self.start()
                 self.console.PRINT("")
             
