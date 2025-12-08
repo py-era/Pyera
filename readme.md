@@ -15,7 +15,6 @@ Pera 是一个基于 **Python** 和 **Pygame** 构建的前端框架，旨在让
 ### **为什么选择 Pera？**
 
 * **CSV 搬运友好**：虽然不能直接转码 ERB，但可以直接搬迁 CSV 文件。  
-<<<<<<< HEAD
 * **自动导入**：框架初始化时会自动导入 ./csv 下的所有 .csv 文件，并自动分类为 **角色数据** 和 **全局变量**。
 
 ## ---
@@ -24,18 +23,12 @@ Pera 是一个基于 **Python** 和 **Pygame** 构建的前端框架，旨在让
 
 ### **环境需求**
 
-* 已配置虚拟环境（你可以直接使用）。  
-* 如果出现莫名其妙的问题
+* 使用pip安装requirements中的库
 * 使用 **Python 3.x**。  
-* 必须安装 **Pygame** 库。 
 
 ### **启动方式**
 
-1. 点击 run.bat。  
-2. 或者在 VSCode 终端输入：  
-   Bash  
-   python main.py
-
+1. python main.py
 
 
 ## ---
@@ -201,20 +194,20 @@ Pera 提供了普通输出和高级交互输出（cs/ColorString）。
 
 1. **普通输出**：  
    ```python
-   self.console.PRINT("helloworld\!")  
-   self.console.PRINT("helloworld\!", colors=(0,0,255)) \# 蓝色文本  
-   self.console.PRINT("helloworld\!", click="你好！Pera") \# 点击后模拟输入  
-   self.console.PRINT("hello", "world") \# 多参数
+   self.console.PRINT("helloworld!")  
+   self.console.PRINT("helloworld!", colors=(0,0,255)) # 蓝色文本  
+   self.console.PRINT("helloworld!", click="你好！Pera") # 点击后模拟输入  
+   self.console.PRINT("hello", "world") # 多参数
    ```
 
 2. **高级输出 (使用 cs)**：在事件中使用时，cs 前需要加 this 或 thethings 引用。  
-   Python  
-   \# 链式调用：设置颜色 \-\> 设置点击事件  ,会输出在同一行哦
+   ```Python  
+   # 链式调用：设置颜色 -> 设置点击事件  ,会输出在同一行哦
    self.console.PRINT(  
-       cs("helloworld").set\_color((0,0,255)).click("你好！Pera"),  
+       cs("helloworld").set_color((0,0,255)).click("你好！Pera"),  
        "          ",  
-       cs("helloworld").set\_color((0,0,255)).click("你好！Pera")  
+       cs("helloworld").set_color((0,0,255)).click("你好！Pera")  
    )
-
+   ```
 
 ---
