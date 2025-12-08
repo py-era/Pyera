@@ -1,22 +1,21 @@
 
-
 # ---
 
 **🐱 Pera Framework 开发指南 (Demo版)**
-**注意：** 本项目目前正在施工中！ 
+**注意：** 本项目目前正在施工中！
 
 ## **📖 简介**
 
-大家好，这里是 **凌冬**。众所周知，使用原版 ERB 开发 Era 游戏时，我们经常会遇到各种问题（看代码像天书、变量裸奔等）。为了让想开发 Era 游戏但在 ERB 面前却步的朋友们有更多选择，我开发了 **Pera** 框架。 
+大家好，这里是 **凌冬**。众所周知，使用原版 ERB 开发 Era 游戏时，我们经常会遇到各种问题（看代码像天书、变量裸奔等）。为了让想开发 Era 游戏但在 ERB 面前却步的朋友们有更多选择，我开发了 **Pera** 框架。
 
 ### **什么是 Pera？**
 
-Pera 是一个基于 **Python** 和 **Pygame** 构建的前端框架，旨在让 Era 系游戏的开发变得更加方便。 
+Pera 是一个基于 **Python** 和 **Pygame** 构建的前端框架，旨在让 Era 系游戏的开发变得更加方便。
 
 ### **为什么选择 Pera？**
 
 * **CSV 搬运友好**：虽然不能直接转码 ERB，但可以直接搬迁 CSV 文件。  
-* **自动导入**：框架初始化时会自动导入 ./csv 下的所有 .csv 文件，并自动分类为 **角色数据** 和 **全局变量**。 
+* **自动导入**：框架初始化时会自动导入 ./csv 下的所有 .csv 文件，并自动分类为 **角色数据** 和 **全局变量**。
 
 ## ---
 
@@ -82,12 +81,12 @@ def event\_helloworld(things):
 用于存储游戏内的物品或其他全局数据。
 
 * **调用示例**：  
-  Python  
+  ```Python  
   def event\_helloworld(things):  
       \# 获取 Item 中 ID 为 1 的物品  
       item\_name \= things.console.init.global\_key\["Item"\].get("1")  
       things.console.PRINT(f"{item\_name} 会输出放在 ./csv/global/Item.csv 中物品id为1的物品")
-
+  ```
 * **结构示例**：  
   Python  
   {  
@@ -190,7 +189,7 @@ Plaintext
 
 ### **字体控制**
 
-* 使用 set\_font 接口更改字体。  
+* 使用 `set_font` 接口更改字体。  
 * **注意**：更改只会影响后续的输出。  
 * 参考代码：./events/fontreset.py 
 
@@ -199,11 +198,12 @@ Plaintext
 Pera 提供了普通输出和高级交互输出（cs/ColorString）。
 
 1. **普通输出**：  
-   Python  
+   ```python
    self.console.PRINT("helloworld\!")  
    self.console.PRINT("helloworld\!", colors=(0,0,255)) \# 蓝色文本  
    self.console.PRINT("helloworld\!", click="你好！Pera") \# 点击后模拟输入  
    self.console.PRINT("hello", "world") \# 多参数
+   ```
 
 2. **高级输出 (使用 cs)**：在事件中使用时，cs 前需要加 this 或 thethings 引用。  
    Python  

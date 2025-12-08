@@ -10,7 +10,7 @@ def event_music_control(things):
     :param things: thethings实例，用于访问音乐盒和控制台
     """
     if not things.console.music_box:
-        things.console.PRINT(things.cs("音乐系统未初始化").color(255, 200, 200))
+        things.console.PRINT(things.cs("音乐系统未初始化").set_color((255, 200, 200)))
         things.console.PRINT(things.cs("按任意键继续..."))
         things.console.INPUT()
         return
@@ -66,7 +66,7 @@ def event_music_control(things):
                 things.console.music_box.play(loops=-1, fade_in=1000)
                 things.console.PRINT(things.cs("音乐开始播放"))
             else:
-                things.console.PRINT(things.cs("请先选择音乐文件").color(255, 200, 200))
+                things.console.PRINT(things.cs("请先选择音乐文件").set_color((255, 200, 200)))
             things.console.PRINT(things.cs("按任意键继续..."))
             things.console.INPUT()
         elif choice == '2':
@@ -87,7 +87,7 @@ def event_music_control(things):
         elif choice == '5':
             # 显示音乐列表供选择
             if not things.console.music_list:
-                things.console.PRINT(things.cs("音乐列表为空").color(255, 200, 200))
+                things.console.PRINT(things.cs("音乐列表为空").set_color((255, 200, 200)))
                 things.console.PRINT(things.cs("按任意键继续..."))
                 things.console.INPUT()
                 continue
@@ -117,15 +117,15 @@ def event_music_control(things):
                             things.console.music_box.play(loops=-1)
                             things.console.PRINT(things.cs(f"已切换到: {selected_music_name}"))
                         else:
-                            things.console.PRINT(things.cs("切换音乐失败").color(255, 200, 200))
+                            things.console.PRINT(things.cs("切换音乐失败").set_color((255, 200, 200)))
                     else:
-                        things.console.PRINT(things.cs(f"音乐文件不存在: {selected_music_path}").color(255, 200, 200))
+                        things.console.PRINT(things.cs(f"音乐文件不存在: {selected_music_path}").set_color((255, 200, 200)))
                 elif choice_num == 0:
                     pass  # 返回
                 else:
-                    things.console.PRINT(things.cs("无效的选择").color(255, 200, 200))
+                    things.console.PRINT(things.cs("无效的选择").set_color((255, 200, 200)))
             else:
-                things.console.PRINT(things.cs("无效的输入").color(255, 200, 200))
+                things.console.PRINT(things.cs("无效的输入").set_color((255, 200, 200)))
             
             things.console.PRINT(things.cs("按任意键继续..."))
             things.console.INPUT()
@@ -150,9 +150,9 @@ def event_music_control(things):
                     things.console.music_box.set_volume(vol_value)
                     things.console.PRINT(things.cs(f"音量已设置为 {vol_value:.2f}"))
                 else:
-                    things.console.PRINT(things.cs("音量值必须在0.0到1.0之间").color(255, 200, 200))
+                    things.console.PRINT(things.cs("音量值必须在0.0到1.0之间").set_color((255, 200, 200)))
             except ValueError:
-                things.console.PRINT(things.cs("请输入有效的数字").color(255, 200, 200))
+                things.console.PRINT(things.cs("请输入有效的数字").set_color((255, 200, 200)))
             things.console.PRINT(things.cs("按任意键继续..."))
             things.console.INPUT()
         elif choice == '9':
@@ -161,7 +161,7 @@ def event_music_control(things):
             things.console.loader.add_text("════════════ 全部音乐 ════════════", (100, 150, 255))
             
             if not things.console.music_list:
-                things.console.PRINT(things.cs("音乐列表为空").color(255, 200, 200))
+                things.console.PRINT(things.cs("音乐列表为空").set_color((255, 200, 200)))
             else:
                 music_names = list(things.console.music_list.keys())
                 for i, music_name in enumerate(music_names, 1):
@@ -173,7 +173,7 @@ def event_music_control(things):
             things.console.PRINT(things.cs("按任意键继续..."))
             things.console.INPUT()
         else:
-            things.console.PRINT(things.cs("无效的选择").color(255, 200, 200))
+            things.console.PRINT(things.cs("无效的选择").set_color((255, 200, 200)))
             things.console.PRINT(things.cs("按任意键继续..."))
             things.console.INPUT()
     
