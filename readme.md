@@ -45,15 +45,15 @@ Pera 是一个基于 **Python** 和 **Pygame** 构建的前端框架，旨在让
 
 在 Pera 中，事件函数通常以 event\_ 开头。
 
-Python
+```Python
 
-\# 开始你的第一个 Pera 事件！  
-def event\_helloworld(things):  
-    \# 从 things 中调用控制台并打印  
-    \# 获取 0 号角色的 "名前"  
-    name \= things.console.init.charaters\_key\["0"\].get("名前")  
+# 开始你的第一个 Pera 事件！  
+def event_helloworld(things):  
+    # 从 things 中调用控制台并打印  
+    # 获取 0 号角色的 "名前"  
+    name = things.console.init.charaters_key["0"].get("名前")  
     things.console.PRINT("你好Pera！", f"{name}")
-
+```
 * 该事件被调用时，终端会打印出：你好！Pera 你 
 
 ### **2\. 数据结构与调用**
@@ -63,7 +63,7 @@ def event\_helloworld(things):
 这是一个存储全体角色键值对和数据的字典。
 
 * **结构示例**：  
-  Python  
+  ```json  
   {  
       "0": {  
           "名前": "你",  
@@ -71,7 +71,7 @@ def event\_helloworld(things):
       },  
       ...  
   }
-
+  ```
 * **数据来源**：./csv/characters/0/0.csv 
 
 * **ID 列表**：chara\_ids (例如 \["0", "1", ...\]) 
@@ -82,13 +82,14 @@ def event\_helloworld(things):
 
 * **调用示例**：  
   ```Python  
-  def event\_helloworld(things):  
-      \# 获取 Item 中 ID 为 1 的物品  
-      item\_name \= things.console.init.global\_key\["Item"\].get("1")  
-      things.console.PRINT(f"{item\_name} 会输出放在 ./csv/global/Item.csv 中物品id为1的物品")
+  def event_helloworld(things):  
+      # 获取 Item 中 ID 为 1 的物品  
+      item_name = things.console.init.global_key["Item"].get("1")  
+      things.console.PRINT(f"{item_name} 会输出放在 ./csv/global/Item.csv 中物品id为1的物品")
   ```
 * **结构示例**：  
-  Python  
+  ```Python  
+  #字典结构展示
   {  
       "Item": {  
           "0": { ... },  
@@ -97,7 +98,7 @@ def event\_helloworld(things):
       },  
       ...  
   }
-
+  ```
 
 
 * **ID 列表**：globalid 
@@ -113,14 +114,14 @@ def event\_helloworld(things):
 
 ### **事件元数据 (Metadata)**
 
-你需要在事件函数末尾定义元数据，以便框架识别和调用：
+你需要在事件函数末尾定义元数据，以便框架识别和调用(其实也可以不写)：
 
-Python
+```Python
 
-event\_helloworld.event\_id \= "helloworld"      \# 加载后的唯一标识  
-event\_helloworld.event\_name \= "你好！Pera"    \# 事件显示名称  
-event\_helloworld.event\_trigger \= "8"          \# 触发条件等
-
+event_helloworld.event_id = "helloworld"      # 加载后的唯一标识  
+event_helloworld.event_name = "你好！Pera"    # 事件显示名称  
+event_helloworld.event_trigger = "8"          # 触发条件等
+```
 ### **触发与通讯**
 
 * 在主框架中触发：  
@@ -136,7 +137,7 @@ event\_helloworld.event\_trigger \= "8"          \# 触发条件等
 
 图片通常存放在 ./img 目录下，按角色 ID 分类：
 
-Plaintext
+```Plaintext
 
 ./img/  
  ├── 角色id/  
@@ -145,21 +146,21 @@ Plaintext
  │    │    ├── xxx.webp  
  │    │    ├── xxx.jpg  
  │    │    └── ...
-
+```
 
 ### **调用立绘 (PRINTIMG)**
 
 接口提供了灵活的调用方式：
 
 1. **使用全名调用**：  
-   Python  
-   PRINTIMG("0\_玩家立绘\_顔絵\_服\_通常\_0")  
-   \# 调用 ./0/玩家立绘/0.csv 中第一列值为 "顔絵\_服\_通常\_0" 对应的图片
-
+   ```Python  
+   PRINTIMG("0_玩家立绘_顔絵_服_通常_0")  
+   # 调用 ./0/玩家立绘/0.csv 中第一列值为 "顔絵_服_通常_0" 对应的图片
+   ```
 2. **指定参数调用**：  
-   Python  
-   PRINTIMG("顔絵\_服\_通常\_0", chara\_id="0", draw\_type="玩家立绘")
-
+   ```Python  
+   PRINTIMG("顔絵_服_通常_0", chara_id="0", draw_type="玩家立绘")
+   ```
 ### **裁剪与尺寸**
 
 * **默认行为**：自动读取 CSV 中的裁剪值和大小。若未指定，默认不裁剪，大小设为 (270, 270)。  

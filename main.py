@@ -115,16 +115,16 @@ class SimpleERAConsole:
             # 更新行高（如果需要）
             self.line_height = font_size + 6  # 可根据需要调整
             
-            self.PRINT(f"字体已更改为: {os.path.basename(font_path)} (大小: {font_size})", (200, 255, 200))
+            self.PRINT(f"字体已更改为: {os.path.basename(font_path)} (大小: {font_size})",colors= (200, 255, 200))
             
             # 刷新显示
             self._draw_display()
             pygame.display.flip()
             
         except FileNotFoundError:
-            self.PRINT(f"字体文件未找到: {font_path}", (255, 200, 200))
+            self.PRINT(f"字体文件未找到: {font_path}",colors= (255, 200, 200))
         except Exception as e:
-            self.PRINT(f"更改字体失败: {e}", (255, 200, 200))
+            self.PRINT(f"更改字体失败: {e}", colors=(255, 200, 200))
 
     def PRINTIMG(self, url, clip_pos=None, size=None, click=None, chara_id=None, draw_type=None):
         """
@@ -175,7 +175,7 @@ class SimpleERAConsole:
             
             # 检查图片数据是否存在
             if url not in self.image_data:
-                self.PRINT(f"图片 {url} 不存在于数据中", (255, 200, 200))
+                self.PRINT(f"图片 {url} 不存在于数据中",colors= (255, 200, 200))
                 
                 # 尝试查找原始名称匹配的图片
                 found = False
@@ -239,7 +239,7 @@ class SimpleERAConsole:
     def _load_all_chara_images(self):
         """加载所有角色的立绘数据 - 支持新的目录结构 ./img/角色id/xx绘/角色id.csv"""
         if not hasattr(self, 'init') or not hasattr(self.init, 'chara_ids'):
-            self.PRINT("角色ID列表未初始化，无法加载角色立绘", (255, 200, 200))
+            self.PRINT("角色ID列表未初始化，无法加载角色立绘",colors= (255, 200, 200))
             return
         
         total_chara_images = 0
@@ -249,7 +249,7 @@ class SimpleERAConsole:
             chara_dir = f"./img/{chara_id}/"
             
             if not os.path.exists(chara_dir):
-                self.PRINT(f"角色目录不存在: {chara_dir}", (255, 200, 200))
+                self.PRINT(f"角色目录不存在: {chara_dir}", colors=(255, 200, 200))
                 continue
             
             # 初始化该角色的立绘字典
@@ -326,24 +326,24 @@ class SimpleERAConsole:
                             self.chara_images[chara_id][draw_type] = draw_image_list
                             
                             chara_name = self.init.charaters_key.get(chara_id, {}).get('名前', f'角色{chara_id}')
-                            self.PRINT(f"已加载角色立绘: {chara_name}({chara_id}) - {draw_type} - {len(draw_image_list)}张", (200, 220, 255))
+                            self.PRINT(f"已加载角色立绘: {chara_name}({chara_id}) - {draw_type} - {len(draw_image_list)}张", colors=(200, 220, 255))
                             
                         except Exception as e:
-                            self.PRINT(f"加载角色{chara_id}的{draw_type}立绘失败: {e}", (255, 200, 200))
+                            self.PRINT(f"加载角色{chara_id}的{draw_type}立绘失败: {e}",colors= (255, 200, 200))
                     else:
-                        self.PRINT(f"立绘数据文件不存在: {csv_path}", (255, 200, 200))
+                        self.PRINT(f"立绘数据文件不存在: {csv_path}",colors= (255, 200, 200))
         
-        self.PRINT(f"角色立绘加载完成，共{total_chara_images}张图片", (200, 255, 200))
+        self.PRINT(f"角色立绘加载完成，共{total_chara_images}张图片", colors=(200, 255, 200))
         
         # 显示所有角色ID和对应的图片数量
         self.PRINT_DIVIDER("-", 40, (150, 150, 150))
-        self.PRINT("角色立绘统计:", (200, 200, 255))
+        self.PRINT("角色立绘统计:", colors=(200, 200, 255))
         for chara_id, draw_types in self.chara_images.items():
             chara_name = self.init.charaters_key.get(chara_id, {}).get('名前', f'角色{chara_id}')
             total_for_chara = sum(len(images) for images in draw_types.values())
-            self.PRINT(f"  {chara_name}({chara_id}): {total_for_chara}张立绘", (200, 200, 200))
+            self.PRINT(f"  {chara_name}({chara_id}): {total_for_chara}张立绘",colors= (200, 200, 200))
             for draw_type, images in draw_types.items():
-                self.PRINT(f"    {draw_type}: {len(images)}张", (150, 150, 150))
+                self.PRINT(f"    {draw_type}: {len(images)}张",colors= (150, 150, 150))
         self.PRINT_DIVIDER("-", 40, (150, 150, 150))
             # 在加载完成后，将图片信息注册到loader
         for img_name, img_info in self.image_data.items():
@@ -862,7 +862,7 @@ class thethings:
             self.input = self.console.INPUT()
             gradient_text = (cs("红").set_color((255, 0, 0)) +cs("橙").set_color((255, 127, 0)) +cs("黄").set_color((255, 255, 0)) +cs("绿").set_color((0, 255, 0)) +cs("青").set_color((0, 255, 255)) +cs("蓝").set_color((0, 0, 255)) +cs("紫").set_color((127, 0, 255)))
             self.console.PRINT(gradient_text.click("gradient"))
-            self.console.PRINTIMG("0_玩家立绘_顔絵_服_通常_0",clip_pos=(0,0),size=(200, 200))#在输出图片时请在需要输出的图片名前加上角色id_，你可以直接输出在csv中的图片名
+            self.console.PRINTIMG("0_玩家立绘_顔絵_服_通常_0",clip_pos=(0,0),size=(180,180))#在输出图片时请在需要输出的图片名前加上角色id_，你可以直接输出在csv中的图片名
             self.console.PRINT(cs("嗯？你来啦？欢迎来到Pera的世界！这里演示的是图片调用，很抱歉直接使用了eratw🐍版里的你小姐的立绘）").set_color((215, 200, 203)))
             self.console.PRINT(cs("[0]start").click("0"),"          ",cs("点击查看凌冬色图").click("no way!!!"),"          ",cs("点击更改字体").click("fontreset"))
             self.event_manager.trigger_event('fontreset',self)
