@@ -189,64 +189,53 @@ class SimpleERAConsole:
                     return
             
             img_info = self.image_data[url]
-            img_path = os.path.join(img_info['base_dir'], img_info['filename'])
             
-            # 检查图片文件是否存在
-            if not os.path.exists(img_path):
-                # 尝试其他路径
-                alternative_path = os.path.join("./", img_info['filename'])
-                if not os.path.exists(alternative_path):
-                    self.PRINT(f"图片文件不存在: {img_info['filename']}", (255, 200, 200))
-                    return
-                img_path = alternative_path
+            # 构建图片标记
+            params = []
             
-            # 加载图片
-            try:
-                image = pygame.image.load(img_path).convert_alpha()
-            except Exception as e:
-                self.PRINT(f"加载图片失败 {img_path}: {e}", (255, 200, 200))
-                return
+            if clip_pos:
+                params.append(f"clip={clip_pos[0]},{clip_pos[1]}")
             
-            # 获取裁剪区域
-            if clip_pos is None:
-                clip_x, clip_y = img_info['x'], img_info['y']
+            if size:
+                params.append(f"size={size[0]},{size[1]}")
+            
+            if click:
+                params.append(f"click={click}")
+            
+            if chara_id:
+                params.append(f"chara={chara_id}")
+            
+            if draw_type:
+                params.append(f"type={draw_type}")
+            
+            # 构建标记字符串
+            param_str = "|".join(params)
+            img_mark = f"[IMG:{url}"
+            if param_str:
+                img_mark += f"|{param_str}"
+            img_mark += "]"
+            
+            # 注册图片信息到动态加载器
+            self.loader.register_image_info(url, {
+                'path': os.path.join(img_info['base_dir'], img_info['filename']),
+                'original_width': img_info['width'],
+                'original_height': img_info['height'],
+                'chara_id': img_info.get('chara_id'),
+                'draw_type': img_info.get('draw_type')
+            })
+            
+            # 使用动态加载器添加图片标记
+            if click:
+                self.loader.add_image_mark(img_mark, click)
             else:
-                clip_x, clip_y = clip_pos
-            
-            clip_width, clip_height = img_info['width'], img_info['height']
-            
-            # 确保裁剪区域在图片范围内
-            img_width, img_height = image.get_size()
-            if clip_x + clip_width > img_width:
-                clip_width = img_width - clip_x
-            if clip_y + clip_height > img_height:
-                clip_height = img_height - clip_y
-            
-            # 裁剪图片
-            if clip_width > 0 and clip_height > 0:
-                clip_rect = pygame.Rect(clip_x, clip_y, clip_width, clip_height)
-                clipped_image = image.subsurface(clip_rect)
-            else:
-                self.PRINT(f"裁剪区域无效: {clip_x}, {clip_y}, {clip_width}, {clip_height}", (255, 200, 200))
-                return
-            
-            # 调整大小
-            if size is not None:
-                target_width, target_height = size
-                clipped_image = pygame.transform.scale(clipped_image, (target_width, target_height))
-            
-            # 将图片添加到动态加载器
-            if click is not None:
-                item = self.loader.add_clickable_image(clipped_image, url, click)
-            else:
-                item = self.loader.add_image_surface(clipped_image, url)
+                self.loader.add_image_mark(img_mark)
             
             # 刷新显示
             self._draw_display()
             pygame.display.flip()
             
         except Exception as e:
-            self.PRINT(f"显示图片失败 {url}: {e}", (255, 200, 200))
+            self.PRINT(f"显示图片失败 {url}: {e}", colors=(255, 200, 200))
     def _load_all_chara_images(self):
         """加载所有角色的立绘数据 - 支持新的目录结构 ./img/角色id/xx绘/角色id.csv"""
         if not hasattr(self, 'init') or not hasattr(self.init, 'chara_ids'):
@@ -356,6 +345,16 @@ class SimpleERAConsole:
             for draw_type, images in draw_types.items():
                 self.PRINT(f"    {draw_type}: {len(images)}张", (150, 150, 150))
         self.PRINT_DIVIDER("-", 40, (150, 150, 150))
+            # 在加载完成后，将图片信息注册到loader
+        for img_name, img_info in self.image_data.items():
+            full_path = os.path.join(img_info['base_dir'], img_info['filename'])
+            self.loader.register_image_info(img_name, {
+                'path': full_path,
+                'original_width': img_info['width'],
+                'original_height': img_info['height'],
+                'chara_id': img_info.get('chara_id'),
+                'draw_type': img_info.get('draw_type')
+            })
     def _load_image_data(self):
         """加载所有角色的图片数据"""
         image_data = {}
@@ -863,7 +862,7 @@ class thethings:
             self.input = self.console.INPUT()
             gradient_text = (cs("红").set_color((255, 0, 0)) +cs("橙").set_color((255, 127, 0)) +cs("黄").set_color((255, 255, 0)) +cs("绿").set_color((0, 255, 0)) +cs("青").set_color((0, 255, 255)) +cs("蓝").set_color((0, 0, 255)) +cs("紫").set_color((127, 0, 255)))
             self.console.PRINT(gradient_text.click("gradient"))
-            self.console.PRINTIMG("0_玩家立绘_顔絵_服_通常_0",clip_pos=(0,0))#在输出图片时请在需要输出的图片名前加上角色id_，你可以直接输出在csv中的图片名
+            self.console.PRINTIMG("0_玩家立绘_顔絵_服_通常_0",clip_pos=(0,0),size=(200, 200))#在输出图片时请在需要输出的图片名前加上角色id_，你可以直接输出在csv中的图片名
             self.console.PRINT(cs("嗯？你来啦？欢迎来到Pera的世界！这里演示的是图片调用，很抱歉直接使用了eratw🐍版里的你小姐的立绘）").set_color((215, 200, 203)))
             self.console.PRINT(cs("[0]start").click("0"),"          ",cs("点击查看凌冬色图").click("no way!!!"),"          ",cs("点击更改字体").click("fontreset"))
             self.event_manager.trigger_event('fontreset',self)

@@ -5,21 +5,81 @@ import json
 import time
 from typing import List, Tuple, Dict, Optional
 from enum import Enum
+# 在dynamic_loader.py中修改InlineFragment类
 class InlineFragment:
-    """行内片段"""
-    def __init__(self, text, color=(255, 255, 255), click_value=None):
+    """行内片段 - 增强版，支持图片标记"""
+    def __init__(self, text, color=(255, 255, 255), click_value=None, 
+                 is_image_mark=False, img_info=None, clip_pos=None, size=None):
         self.text = str(text)
         self.color = color
         self.click_value = click_value
-        self.width = 0  # 将在绘制时计算
+        self.is_image_mark = is_image_mark  # 是否是图片标记
+        self.img_info = img_info  # 图片信息（如果是图片标记）
+        self.clip_pos = clip_pos  # 裁剪位置
+        self.size = size  # 调整大小
+        self.width = 0  # 将在绘制时计算（图片需要特殊处理）
+        self.height = 0  # 图片高度
     
     def calculate_width(self, font):
         """计算片段宽度"""
-        self.width = font.size(self.text)[0]
+        if self.is_image_mark and self.img_info:
+            # 如果是图片标记，宽度为图片宽度（或默认占位符宽度）
+            if self.size:
+                self.width = self.size[0]
+            else:
+                self.width = self.img_info.get('original_width', 270)
+        else:
+            # 普通文本
+            self.width = font.size(self.text)[0]
+        
         return self.width
+    
+    def render_image(self):
+        """渲染图片（如果是图片标记）"""
+        if not self.is_image_mark or not self.img_info:
+            return None
+        
+        try:
+            img_path = os.path.join(self.img_info.get('base_dir', './'), 
+                                   self.img_info.get('filename', ''))
+            
+            if not os.path.exists(img_path):
+                return None
+            
+            image = pygame.image.load(img_path).convert_alpha()
+            
+            # 裁剪
+            clip_x, clip_y = self.clip_pos if self.clip_pos else (0, 0)
+            clip_width = self.img_info.get('width', 270)
+            clip_height = self.img_info.get('height', 270)
+            
+            # 确保裁剪区域有效
+            img_width, img_height = image.get_size()
+            if clip_x + clip_width > img_width:
+                clip_width = img_width - clip_x
+            if clip_y + clip_height > img_height:
+                clip_height = img_height - clip_y
+            
+            if clip_width > 0 and clip_height > 0:
+                clip_rect = pygame.Rect(clip_x, clip_y, clip_width, clip_height)
+                clipped_image = image.subsurface(clip_rect)
+            else:
+                return None
+            
+            # 调整大小
+            if self.size:
+                target_width, target_height = self.size
+                clipped_image = pygame.transform.scale(clipped_image, (target_width, target_height))
+            
+            return clipped_image
+            
+        except Exception as e:
+            print(f"渲染行内图片失败: {e}")
+            return None
 class ContentType(Enum):
     TEXT = "text"
     IMAGE = "image"
+    IMAGE_MARK = "image_mark"  # 图片标记类型
     DIVIDER = "divider"
     MENU = "menu"
 
@@ -71,7 +131,10 @@ class DynamicLoader:
         self.screen_height = screen_height
         self.font = font
         self.input_area_height = input_area_height
-        
+        # 图片信息注册表
+        self.image_registry = {}  # url -> 图片信息
+        self.image_surface_cache = {}  # 缓存已渲染的图片Surface
+        self.placeholder_color = (100, 100, 150)  # 图片加载前的占位符颜色
         # 内容管理
         self.history: List[ConsoleContent] = []  # 完整的历史记录
         self.max_history_length = 10000  # 最大历史记录数
@@ -99,6 +162,170 @@ class DynamicLoader:
         self.clickable_regions = []  # 存储所有可点击区域
         self.clickable_region_counter = 0  # 可点击区域计数器
         self.active_clickable_regions = []  # 当前显示的可点击区域
+    def _parse_image_mark(self, text):
+        """解析图片标记字符串"""
+        if not text.startswith("[IMG:") or not text.endswith("]"):
+            return None, {}
+        
+        content = text[5:-1]  # 移除 [IMG: 和 ]
+        parts = content.split("|")
+        
+        if not parts:
+            return None, {}
+        
+        img_url = parts[0]
+        params = {}
+        
+        for param in parts[1:]:
+            if "=" in param:
+                key, value = param.split("=", 1)
+                params[key] = value
+        
+        return img_url, params
+    def register_image_info(self, url, img_info):
+        """注册图片信息"""
+        if not hasattr(self, 'image_registry'):
+            self.image_registry = {}
+        
+        self.image_registry[url] = img_info
+    def get_registered_image_info(self, url):
+        """获取已注册的图片信息"""
+        if hasattr(self, 'image_registry') and url in self.image_registry:
+            return self.image_registry[url]
+        return None
+    def add_image_mark(self, img_mark, click_value=None):
+        """
+        添加图片标记到历史记录
+        
+        Args:
+            img_mark: 图片标记字符串，格式 [IMG:图片ID|参数]
+            click_value: 点击时输入的文本
+        """
+        # 解析图片标记
+        img_url, params = self._parse_image_mark(img_mark)
+        if not img_url:
+            # 如果不是有效的图片标记，作为普通文本处理
+            return self.add_text(img_mark)
+        
+        # 获取图片信息（从主控制台传递过来）
+        # 注意：我们需要在SimpleERAConsole中注册图片信息到loader
+        img_info = self.get_registered_image_info(img_url)
+        
+        if not img_info:
+            # 图片未注册，显示错误标记
+            item = ConsoleContent(
+                ContentType.TEXT,
+                f"[图片未找到: {img_url}]",
+                color=(255, 100, 100),
+                height=self.line_height
+            )
+            self.history.append(item)
+            self._update_current_display()
+            return item
+        
+        # 解析参数
+        clip_pos = None
+        size = None
+        
+        if 'clip' in params:
+            clip_x, clip_y = map(int, params['clip'].split(','))
+            clip_pos = (clip_x, clip_y)
+        
+        if 'size' in params:
+            width, height = map(int, params['size'].split(','))
+            size = (width, height)
+        
+        # 创建图片内容项
+        item = ConsoleContent(
+            ContentType.IMAGE_MARK,  # 新的内容类型
+            img_mark,  # 保留原始标记
+            height=size[1] + 10 if size else img_info.get('height', 270) + 10,
+            metadata={
+                'img_url': img_url,
+                'img_info': img_info,
+                'clip_pos': clip_pos,
+                'size': size,
+                'click_value': click_value,
+                'cached_surface': None,  # 稍后渲染
+                'needs_rendering': True
+            }
+        )
+        
+        if click_value:
+            item.metadata['clickable'] = True
+            item.metadata['region_id'] = self.clickable_region_counter
+            
+            # 记录点击区域
+            self.clickable_regions.append({
+                'id': self.clickable_region_counter,
+                'content_item': item,
+                'click_value': click_value,
+                'text': f"[图片] {img_url}",
+                'type': 'image'
+            })
+            
+            self.clickable_region_counter += 1
+        
+        self.history.append(item)
+        self._write_to_log(f"[IMAGE] {img_url}")
+        self._update_current_display()
+        
+        # 自动滚动到底部
+        if self.scroll_offset <= 5:
+            self.scroll_to_bottom()
+        
+        return item
+    def parse_image_mark(self, text):
+        """解析图片标记文本"""
+        # 格式: [IMG:图片ID|参数1|参数2|...]
+        if text.startswith("[IMG:") and text.endswith("]"):
+            content = text[5:-1]  # 移除 [IMG: 和 ]
+            
+            # 分割图片ID和参数
+            parts = content.split("|", 1)
+            img_url = parts[0]
+            
+            params = {}
+            if len(parts) > 1:
+                param_str = parts[1]
+                for param in param_str.split("|"):
+                    if "=" in param:
+                        key, value = param.split("=", 1)
+                        params[key] = value
+            
+            return img_url, params
+        
+        return None, None
+    
+    def add_inline_image_fragment(self, fragment):
+        """添加行内图片片段"""
+        # 创建或获取当前行
+        if not self.history or self.history[-1].type != ContentType.TEXT:
+            # 创建新行
+            item = ConsoleContent(
+                ContentType.TEXT,
+                "",
+                height=self.line_height,
+                fragments=[]
+            )
+            self.history.append(item)
+        else:
+            item = self.history[-1]
+        
+        # 添加到当前行的片段
+        item.add_fragment(fragment)
+        
+        # 更新高度（如果是图片，可能需要调整行高）
+        if fragment.is_image_mark and fragment.img_info:
+            img_height = fragment.size[1] if fragment.size else fragment.img_info.get('height', 270)
+            item.height = max(item.height, img_height + 10)
+        
+        self._write_to_log(fragment.text)
+        self._update_current_display()
+        
+        # 自动滚动到底部
+        if self.scroll_offset <= 5:
+            self.scroll_to_bottom()
     def set_font(self, font):
         self.font = font
     def add_inline_fragments(self, fragments: List[InlineFragment]) -> ConsoleContent:
@@ -718,7 +945,7 @@ class DynamicLoader:
         }
     
     def draw(self, screen: pygame.Surface):
-        """绘制内容到屏幕"""
+        """绘制内容到屏幕 - 增强版，支持图片标记渲染"""
         current_y = 10
         
         # 绘制可见内容
@@ -731,37 +958,105 @@ class DynamicLoader:
                 
                 # 如果有行内片段，逐个绘制
                 if item.fragments:
+                    # 需要先计算这行的基线位置（考虑图片高度）
+                    max_height_in_line = item.height - 10  # 减去边距
+                    
                     for fragment in item.fragments:
                         # 计算片段宽度
                         fragment.calculate_width(self.font)
                         
-                        # 检查是否需要换行（当前行剩余宽度不够）
+                        # 检查是否需要换行
                         available_width = self.screen_width - current_x - 20
                         if fragment.width > available_width and current_x > 10:
                             current_x = 10
                             current_y += item.height
+                            # 重新计算基线
+                            max_height_in_line = item.height - 10
                         
-                        # 绘制文本
-                        text_surface = self.font.render(fragment.text, True, fragment.color)
-                        screen.blit(text_surface, (current_x, current_y))
+                        # 如果是图片标记
+                        if fragment.is_image_mark:
+                            # 渲染图片
+                            image = fragment.render_image()
+                            if image:
+                                # 计算图片位置（垂直居中于行高）
+                                img_y = current_y + (max_height_in_line - image.get_height()) // 2
+                                screen.blit(image, (current_x, img_y))
+                                
+                                # 如果有点击功能，添加点击区域
+                                if fragment.click_value:
+                                    # 创建点击区域
+                                    region_id = self.clickable_region_counter
+                                    self.clickable_region_counter += 1
+                                    
+                                    region_rect = pygame.Rect(current_x, img_y, 
+                                                            image.get_width(), 
+                                                            image.get_height())
+                                    
+                                    self.active_clickable_regions.append({
+                                        'id': region_id,
+                                        'rect': region_rect,
+                                        'click_value': fragment.click_value,
+                                        'type': 'image'
+                                    })
+                            else:
+                                # 图片加载失败，绘制占位符
+                                placeholder_rect = pygame.Rect(current_x, current_y, 
+                                                            fragment.width, 
+                                                            max_height_in_line)
+                                pygame.draw.rect(screen, self.placeholder_color, placeholder_rect)
+                                pygame.draw.rect(screen, (150, 150, 150), placeholder_rect, 1)
+                                
+                                # 绘制加载失败文本
+                                error_text = self.font.render("X", True, (255, 100, 100))
+                                screen.blit(error_text, (current_x + 5, current_y + 5))
+                            
+                            current_x += fragment.width
                         
-                        current_x += fragment.width
+                        else:
+                            # 普通文本
+                            text_surface = self.font.render(fragment.text, True, fragment.color)
+                            
+                            # 计算文本基线位置（与图片垂直居中）
+                            text_y = current_y + (max_height_in_line - text_surface.get_height()) // 2
+                            screen.blit(text_surface, (current_x, text_y))
+                            
+                            # 如果有点击功能，添加点击区域
+                            if fragment.click_value:
+                                region_id = self.clickable_region_counter
+                                self.clickable_region_counter += 1
+                                
+                                region_rect = pygame.Rect(current_x, text_y, 
+                                                        text_surface.get_width(), 
+                                                        text_surface.get_height())
+                                
+                                self.active_clickable_regions.append({
+                                    'id': region_id,
+                                    'rect': region_rect,
+                                    'click_value': fragment.click_value,
+                                    'type': 'text'
+                                })
+                            
+                            current_x += fragment.width
                     
                     # 一行绘制完毕，换行
                     current_y += item.height
+                
                 else:
-                    # 普通文本
+                    # 普通文本（没有片段）
                     text_surface = self.font.render(item.data, True, item.color)
                     screen.blit(text_surface, (10, current_y))
                     current_y += item.height
-                    
+            elif item.type == ContentType.IMAGE_MARK:
+                # 渲染图片标记
+                self._render_and_draw_image_mark(screen, item, 10, current_y)
+                current_y += item.height
             elif item.type == ContentType.IMAGE:
-                # 绘制图片
+                # 处理旧的图片类型（向后兼容）
                 if item.data in self.image_cache:
                     image = self.image_cache[item.data]
-                    img_x = 10  # 图片从左侧开始
-                    screen.blit(image, (img_x, current_y))
-                    current_y += item.height
+                    screen.blit(image, (10, current_y))
+                
+                current_y += item.height
                     
             elif item.type == ContentType.DIVIDER:
                 # 绘制分割线
@@ -780,7 +1075,93 @@ class DynamicLoader:
         # 绘制滚动条（如果需要）
         if self.scrollbar_visible and len(self.history) > 0:
             self._draw_scrollbar(screen)
-    
+    def _render_and_draw_image_mark(self, screen, item, x, y):
+        """渲染并绘制图片标记"""
+        metadata = item.metadata
+        
+        # 检查是否有缓存的图片
+        if metadata.get('cached_surface') and not metadata.get('needs_rendering'):
+            surface = metadata['cached_surface']
+            screen.blit(surface, (x, y))
+            return surface
+        
+        # 需要渲染图片
+        img_url = metadata.get('img_url')
+        img_info = metadata.get('img_info')
+        
+        if not img_url or not img_info:
+            # 绘制错误指示
+            self._draw_image_error(screen, x, y, item.height - 10)
+            return None
+        
+        try:
+            # 加载图片
+            if not os.path.exists(img_info['path']):
+                # 尝试其他路径
+                alt_path = os.path.join("./", os.path.basename(img_info['path']))
+                if not os.path.exists(alt_path):
+                    self._draw_image_error(screen, x, y, item.height - 10)
+                    return None
+                img_info['path'] = alt_path
+            
+            image = pygame.image.load(img_info['path']).convert_alpha()
+            
+            # 裁剪
+            clip_pos = metadata.get('clip_pos') or (0, 0)
+            clip_x, clip_y = clip_pos
+            clip_width = img_info['original_width']
+            clip_height = img_info['original_height']
+            
+            # 确保裁剪区域有效
+            img_width, img_height = image.get_size()
+            if clip_x + clip_width > img_width:
+                clip_width = img_width - clip_x
+            if clip_y + clip_height > img_height:
+                clip_height = img_height - clip_y
+            
+            if clip_width > 0 and clip_height > 0:
+                clip_rect = pygame.Rect(clip_x, clip_y, clip_width, clip_height)
+                clipped_image = image.subsurface(clip_rect)
+            else:
+                self._draw_image_error(screen, x, y, item.height - 10)
+                return None
+            
+            # 调整大小
+            size = metadata.get('size')
+            if size:
+                target_width, target_height = size
+                clipped_image = pygame.transform.scale(clipped_image, (target_width, target_height))
+            
+            # 缓存结果
+            metadata['cached_surface'] = clipped_image
+            metadata['needs_rendering'] = False
+            
+            # 绘制
+            screen.blit(clipped_image, (x, y))
+            
+            # 更新点击区域（如果有点击功能）
+            if metadata.get('clickable'):
+                for region in self.clickable_regions:
+                    if region.get('content_item') == item:
+                        region['rect'] = pygame.Rect(x, y, clipped_image.get_width(), clipped_image.get_height())
+            
+            return clipped_image
+            
+        except Exception as e:
+            print(f"渲染图片标记失败 {img_url}: {e}")
+            self._draw_image_error(screen, x, y, item.height - 10)
+            return None
+
+    def _draw_image_error(self, screen, x, y, height):
+        """绘制图片错误指示"""
+        placeholder_rect = pygame.Rect(x, y, 270, height)
+        pygame.draw.rect(screen, (100, 100, 150), placeholder_rect)
+        pygame.draw.rect(screen, (150, 150, 150), placeholder_rect, 1)
+        
+        error_text = self.font.render("?", True, (255, 200, 100))
+        text_x = x + (270 - error_text.get_width()) // 2
+        text_y = y + (height - error_text.get_height()) // 2
+        screen.blit(error_text, (text_x, text_y))
     def _draw_scrollbar(self, screen: pygame.Surface):
         """绘制滚动条"""
         total_height = sum(item.height for item in self.history)
