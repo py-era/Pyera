@@ -83,7 +83,7 @@ class SimpleERAConsole:
         except Exception as e:
             self.PRINT(f"更改字体失败: {e}", colors=(255, 200, 200))
     # main.py - 修改 PRINTIMG 方法
-    def PRINTIMG(self, url, clip_pos=None, size=None, click=None, chara_id=None, draw_type=None, img_list=None,offset=None):
+    def PRINTIMG(self, url, clip_pos=None, size=None, click=None, chara_id=None, draw_type=None, img_list=None):
         """
         显示图片到控制台 - 增强版，支持单张图片或图片列表叠加
         
@@ -102,7 +102,8 @@ class SimpleERAConsole:
         try:
             # 如果传入了img_list，则使用列表模式
             if img_list and isinstance(img_list, list):
-                # 创建图片列表叠加标记
+                # 创建图片列表叠加标记\
+                # 仍然可用全局去定义，如若没有定义字典，就用全局代替，如果没有全局，就用csv内代替
                 return self._print_image_stack(img_list, clip_pos, size, click, chara_id, draw_type)
             
             # 以下是原有的单张图片处理逻辑
@@ -206,7 +207,7 @@ class SimpleERAConsole:
             'original_name': img_info.get('original_name')
         }
 
-    def _print_image_stack(self, img_list, clip_pos=None, size=None, click=None, chara_id=None, draw_type=None,offset=None):
+    def _print_image_stack(self, img_list, clip_pos=None, size=None, click=None, chara_id=None, draw_type=None):
         """
         处理图片列表叠加显示
         
@@ -227,9 +228,10 @@ class SimpleERAConsole:
                     item_chara_id = img_item.get('chara_id', chara_id)
                     item_click = img_item.get('click',click)
                     item_size = img_item.get('size',size)
-                    item_offset=img_item.get('offset',offset)
+                    item_offset=img_item.get('offset',(0,0))
                 else:
-                    # 字符串格式：直接是图片名
+                    # 字符串格式：直接是图片名,但是只能支持全局配置
+                    # 简单搭配
                     img_url = img_item
                     item_draw_type = draw_type
                     item_chara_id = chara_id
@@ -254,25 +256,27 @@ class SimpleERAConsole:
                 return
             
             # 构建图片叠加标记
-            # 格式: [IMG_STACK:img1,{clip:{x,x},size:{x,y},click:click_value,chara:chara_id,type:draw_type}|img2.....]
+            # 格式: [IMG_STACK:img1,{clip:(x,x),size:(x,y),click:click_value,chara:chara_id,type:draw_type}|img2.....]
             #渲染底层透明模板时高取最高图片的高，宽取屏幕的宽
-            param_str = f"img_list={','.join(processed_images)}"
-            
-            if clip_pos:
-                param_str += f"|clip={clip_pos[0]},{clip_pos[1]}"
-            
-            if size:
-                param_str += f"|size={size[0]},{size[1]}"
-            
-            if click:
-                param_str += f"|click={click}"
-            
-            if chara_id:
-                param_str += f"|chara={chara_id}"
-            
-            if draw_type:
-                param_str += f"|type={draw_type}"
-            
+            #param_str = f"img_list={','.join(processed_images)}"
+            for i in processed_images:
+                param_str = f"img_list={i},"
+                if clip_pos:
+                    param_str += f",clip:({clip_pos[0]},{clip_pos[1]})"
+                
+                if size:
+                    param_str += f",size:({size[0]},{size[1]})"
+                
+                if click:
+                    param_str += f",click:{click}"
+                
+                if chara_id:
+                    param_str += f",chara:{chara_id}"
+                
+                if draw_type:
+                    param_str += f",type:{draw_type}"
+                if item_offset:
+                    param_str += f",offset:({item_offset[0]},{item_offset[1]})"
             # 创建特殊的图片叠加标记
             stack_mark = f"[IMG_STACK:{processed_images[0]}|{param_str}]"
             
