@@ -6,6 +6,7 @@ def event_start(this):
     for i in this.event_manager.eventid:
         if i in loadidlist:
             start_eventid[i]=this.event_manager.eventid[i]
+    this.event_manager.trigger_event('设置立绘类型选择',this)
     running = True
     while running:
         input = this.console.INPUT()

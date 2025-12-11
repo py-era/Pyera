@@ -82,101 +82,8 @@ class SimpleERAConsole:
             self.PRINT(f"字体文件未找到: {font_path}",colors= (255, 200, 200))
         except Exception as e:
             self.PRINT(f"更改字体失败: {e}", colors=(255, 200, 200))
-    def PRINTIMG_ROW(self, images_config, total_width=800, height=300, padding=10):
-        """
-        在一行中显示多个立绘（通过长透明底图+偏移实现）
-        
-        Args:
-            images_config: 图片配置列表，每个元素是包含以下键的字典:
-                - img_url: 图片名
-                - chara_id: 角色ID（可选）
-                - draw_type: 立绘类型（可选）
-                - offset_x: 在底图上的x偏移
-                - offset_y: 在底图上的y偏移（可选，默认0）
-                - size: 调整大小 (width, height)（可选）
-            total_width: 透明底图总宽度
-            height: 底图高度
-            padding: 图片之间的间距
-        """
-        try:
-            # 创建透明底图的图片标记
-            # 格式: [IMG_STACK:透明底图|img_list=图片1,图片2,...|参数]
-            
-            # 构建图片列表和偏移参数
-            img_list = []
-            chara_ids = []
-            draw_types = []
-            offsets = []
-            sizes = []
-            
-            for config in images_config:
-                img_url = config.get('img_url')
-                chara_id = config.get('chara_id')
-                draw_type = config.get('draw_type')
-                offset_x = config.get('offset_x', 0)
-                offset_y = config.get('offset_y', 0)
-                size = config.get('size')
-                
-                if not img_url:
-                    continue
-                
-                # 查找图片信息
-                img_info = self._find_image_info(img_url, chara_id, draw_type)
-                if not img_info:
-                    self.PRINT(f"图片 {img_url} 不存在", colors=(255, 200, 200))
-                    continue
-                
-                # 使用图片名作为标识
-                img_name = img_info.get('original_name', img_url)
-                if chara_id and draw_type:
-                    img_name = f"{chara_id}_{draw_type}_{img_name}"
-                
-                # 注册图片信息
-                self.loader.register_image_info(img_name, img_info)
-                
-                # 收集信息
-                img_list.append(img_name)
-                chara_ids.append(chara_id or '')
-                draw_types.append(draw_type or '')
-                offsets.append(f"{offset_x},{offset_y}")
-                sizes.append(size)
-            
-            if not img_list:
-                self.PRINT("没有有效的图片配置", colors=(255, 200, 200))
-                return
-            
-            # 构建参数字符串
-            params = [
-                f"img_list={','.join(img_list)}",
-                f"size={total_width},{height}",
-                f"row_display=true",  # 标记为行显示模式
-            ]
-            
-            # 添加偏移信息
-            if offsets:
-                params.append(f"offsets={';'.join(offsets)}")
-            
-            # 添加角色ID和立绘类型信息
-            if chara_ids:
-                params.append(f"chara_ids={';'.join(chara_ids)}")
-            if draw_types:
-                params.append(f"draw_types={';'.join(draw_types)}")
-            
-            # 创建图片叠加标记
-            param_str = "|".join(params)
-            stack_mark = f"[IMG_STACK:{img_list[0]}|{param_str}]"
-            
-            # 添加到动态加载器
-            self.loader.add_image_mark(stack_mark)
-            
-            # 刷新显示
-            self._draw_display()
-            pygame.display.flip()
-            
-        except Exception as e:
-            self.PRINT(f"显示多立绘行失败: {e}", colors=(255, 200, 200))
     # main.py - 修改 PRINTIMG 方法
-    def PRINTIMG(self, url, clip_pos=None, size=None, click=None, chara_id=None, draw_type=None, img_list=None):
+    def PRINTIMG(self, url, clip_pos=None, size=None, click=None, chara_id=None, draw_type=None, img_list=None,offset=None):
         """
         显示图片到控制台 - 增强版，支持单张图片或图片列表叠加
         
@@ -299,7 +206,7 @@ class SimpleERAConsole:
             'original_name': img_info.get('original_name')
         }
 
-    def _print_image_stack(self, img_list, clip_pos=None, size=None, click=None, chara_id=None, draw_type=None):
+    def _print_image_stack(self, img_list, clip_pos=None, size=None, click=None, chara_id=None, draw_type=None,offset=None):
         """
         处理图片列表叠加显示
         
@@ -318,6 +225,9 @@ class SimpleERAConsole:
                     img_url = img_item.get('img')
                     item_draw_type = img_item.get('draw_type', draw_type)
                     item_chara_id = img_item.get('chara_id', chara_id)
+                    item_click = img_item.get('click',click)
+                    item_size = img_item.get('size',size)
+                    item_offset=img_item.get('offset',offset)
                 else:
                     # 字符串格式：直接是图片名
                     img_url = img_item
@@ -344,7 +254,8 @@ class SimpleERAConsole:
                 return
             
             # 构建图片叠加标记
-            # 格式: [IMG_STACK:图片1|图片2|图片3|参数]
+            # 格式: [IMG_STACK:img1,{clip:{x,x},size:{x,y},click:click_value,chara:chara_id,type:draw_type}|img2.....]
+            #渲染底层透明模板时高取最高图片的高，宽取屏幕的宽
             param_str = f"img_list={','.join(processed_images)}"
             
             if clip_pos:
@@ -574,28 +485,6 @@ class SimpleERAConsole:
         
         # 添加到动态加载器
         self.loader.add_inline_fragments(inline_fragments)
-        
-        # 刷新显示
-        self._draw_display()
-        pygame.display.flip()
-    def _print_clickable_parts(self, parts):
-        """输出可点击部分"""
-        # 使用动态加载器的方法
-        if any(part.get('click_value') for part in parts):
-            # 如果有可点击部分，使用专门的方法
-            formatted_parts = []
-            for part in parts:
-                formatted_parts.append({
-                    'text': part['text'],
-                    'color': part['color'],
-                    'click_value': part.get('click_value')
-                })
-            self.loader.add_clickable_parts(formatted_parts)
-        else:
-            # 没有可点击部分，合并为普通文本
-            combined_text = ''.join(part['text'] for part in parts)
-            color = parts[0]['color'] if parts else (255, 255, 255)
-            self.loader.add_text(combined_text, color)
         
         # 刷新显示
         self._draw_display()

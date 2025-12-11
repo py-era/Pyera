@@ -33,7 +33,7 @@ class thethings:
             gradient_text = (cs("红").set_color((255, 0, 0)) +cs("橙").set_color((255, 127, 0)) +cs("黄").set_color((255, 255, 0)) +cs("绿").set_color((0, 255, 0)) +cs("青").set_color((0, 255, 255)) +cs("蓝").set_color((0, 0, 255)) +cs("紫").set_color((127, 0, 255)))
             self.console.PRINT(gradient_text.click("gradient"))
             img_list = ["別顔_服_笑顔_0","別顔_汗_0",]
-            self.console.PRINTIMG("",img_list=img_list,chara_id='0',draw_type='玩家立绘')#在输出图片时请在需要输出的图片名前加上角色id_，你可以直接输出在csv中的图片名
+            self.console.PRINTIMG("",img_list=img_list,chara_id='0',draw_type='玩家立绘',click='111')#在输出图片时请在需要输出的图片名前加上角色id_，你可以直接输出在csv中的图片名
             self.console.PRINT(cs("嗯？你来啦？欢迎来到Pera的世界！这里演示的是图片调用，很抱歉直接使用了eratw🐍版里的你小姐的立绘）").set_color((215, 200, 203)))
             self.console.PRINT(cs("[0]start").click("0"),"          ",cs("点击查看凌冬色图").click("no way!!!"),"          ",cs("点击更改字体").click("fontreset"),"        ",cs("[666]和你小姐对话").click("666"))
             if self.input and self.input.lower() == "quit":

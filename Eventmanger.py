@@ -51,6 +51,9 @@ class EventManager:
     
     def trigger_event(self, event_name, things_instance):
         """触发指定事件"""
-        if event_name in self.events:
-            # 传递 thethings 实例给事件函数
-            self.events[event_name](things_instance)
+        try:
+            if event_name in self.events:
+                # 传递 thethings 实例给事件函数
+                self.events[event_name](things_instance)
+        except Exception as e:
+            self.console.PRINT(f"触发事件失败 {event_name}: {e}", (255, 200, 200))
