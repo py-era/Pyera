@@ -867,7 +867,14 @@ class DynamicLoader:
                 
                 try:
                     # 加载图片
-                    image = pygame.image.load(img_path).convert_alpha()
+                    if img_path in self.image_cache:
+                        image = self.image_cache[img_path]
+                    else:
+                        if os.path.exists(img_path):
+                            image = pygame.image.load(img_path).convert_alpha()
+                            self.image_cache[img_path] = image # 存入缓存
+                        else:
+                            continue # 文件不存在处理
                     
                     # 1. 获取 CSV/注册表中定义的裁剪参数
                     # 这些值来自 ERAconsole.py 的 _get_image_info_dict

@@ -6,7 +6,13 @@ def event_start(this):
     for i in this.event_manager.eventid:
         if i in loadidlist:
             start_eventid[i]=this.event_manager.eventid[i]
-    this.event_manager.trigger_event('设置立绘类型选择',this)
+    this.console.PRINT("是否要进行全角色立绘检查？")
+    this.console.PRINT(this.cs("[1]是").click("1"),"      ",this.cs("[2]否").click("2"))
+    coice=this.console.INPUT()
+    if coice=='1':
+        this.event_manager.trigger_event('设置立绘类型选择',this)
+    if coice=='2':
+        this.console.PRINT("已跳过立绘检查,所有角色默认设置为初始绘")
     running = True
     while running:
         input = this.console.INPUT()
