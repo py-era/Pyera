@@ -85,30 +85,17 @@ class SimpleERAConsole:
     # main.py - 修改 PRINTIMG 方法
     def PRINTIMG(self, url, clip_pos=None, size=None, click=None, chara_id=None, draw_type=None, img_list=None):
         """
-        显示图片到控制台 - 增强版，支持单张图片或图片列表叠加
-        
-        Args:
-            url: 单张图片名，或当使用img_list时的默认图片
-            clip_pos: 裁剪位置 (x, y)，可选
-            size: 调整大小 (width, height)，可选
-            click: 点击回调函数，可选
-            chara_id: 角色ID，可选
-            draw_type: 立绘类型，可选
-            img_list: 图片列表，用于叠加显示。可以是：
-                    1. 图片名列表 [img1, img2, ...]
-                    2. 字典列表 [{"img": img1, "draw_type": type1}, ...]
-                    3. 混合列表
+        显示图片到控制台 - 修复版
         """
         try:
             # 如果传入了img_list，则使用列表模式
             if img_list and isinstance(img_list, list):
-                # 创建图片列表叠加标记\
-                # 仍然可用全局去定义，如若没有定义字典，就用全局代替，如果没有全局，就用csv内代替
                 return self._print_image_stack(img_list, clip_pos, size, click, chara_id, draw_type)
             
             # 以下是原有的单张图片处理逻辑
             img_info = self._find_image_info(url, chara_id, draw_type)
             if not img_info:
+                self.PRINT(f"图片 {url} 未找到", colors=(255, 200, 200))
                 return
             
             # 构建图片标记
@@ -121,13 +108,13 @@ class SimpleERAConsole:
                 params.append(f"size={size[0]},{size[1]}")
             
             if click:
-                params.append(f"click={click}")
+                params.append(f"click={str(click)}")  # 确保为字符串
             
             if chara_id:
-                params.append(f"chara={chara_id}")
+                params.append(f"chara={str(chara_id)}")
             
             if draw_type:
-                params.append(f"type={draw_type}")
+                params.append(f"type={str(draw_type)}")
             
             # 构建标记字符串
             param_str = "|".join(params)
@@ -140,10 +127,8 @@ class SimpleERAConsole:
             self.loader.register_image_info(url, img_info)
             
             # 使用动态加载器添加图片标记
-            if click:
-                self.loader.add_image_mark(img_mark, click)
-            else:
-                self.loader.add_image_mark(img_mark)
+            click_value = str(click) if click else None
+            self.loader.add_image_mark(img_mark, click_value)
             
             # 刷新显示
             self._draw_display()
@@ -152,139 +137,183 @@ class SimpleERAConsole:
         except Exception as e:
             self.PRINT(f"显示图片失败 {url}: {e}", colors=(255, 200, 200))
 
+    # 在ERAconsole.py中修复_find_image_info方法
     def _find_image_info(self, img_url, chara_id=None, draw_type=None):
-        """根据图片名、角色ID和立绘类型查找图片信息"""
-        actual_url = img_url
+        """根据图片名、角色ID和立绘类型查找图片信息 - 修复版"""
+        # 尝试直接查找（假设img_url已经是完整的注册名）
+        if img_url in self.image_data:
+            return self._get_image_info_dict(img_url)
         
-        # 尝试直接查找
-        if actual_url in self.image_data:
-            return self._get_image_info_dict(actual_url)
-        
-        # 如果有角色ID，尝试加上前缀查找
-        if chara_id:
-            # 如果有立绘类型，优先在指定类型中查找
-            if draw_type and draw_type in self.chara_images.get(chara_id, {}):
-                prefixed_url = f"{chara_id}_{draw_type}_{img_url}"
-                if prefixed_url in self.image_data:
-                    return self._get_image_info_dict(prefixed_url)
-                
-                # 尝试查找原始名称匹配的图片
-                for img_name in self.chara_images[chara_id][draw_type]:
-                    if self.image_data[img_name].get('original_name') == img_url:
-                        return self._get_image_info_dict(img_name)
+        # 如果有角色ID和立绘类型，尝试构建完整名称查找
+        if chara_id and draw_type:
+            # 构建可能的名称格式
+            possible_names = [
+                f"{chara_id}_{draw_type}_{img_url}",
+                f"{chara_id}_{img_url}",
+                img_url
+            ]
             
-            # 如果没有指定立绘类型，在所有立绘类型中查找
-            else:
-                for draw_type_key, img_list_data in self.chara_images.get(chara_id, {}).items():
-                    prefixed_url = f"{chara_id}_{draw_type_key}_{img_url}"
-                    if prefixed_url in self.image_data:
-                        return self._get_image_info_dict(prefixed_url)
-                    
-                    for img_name in img_list_data:
-                        if self.image_data[img_name].get('original_name') == img_url:
-                            return self._get_image_info_dict(img_name)
+            for name in possible_names:
+                if name in self.image_data:
+                    return self._get_image_info_dict(name)
         
-        # 尝试全局查找原始名称匹配的图片
+        # 尝试在所有图片中查找原始名称匹配
         for img_name, img_info in self.image_data.items():
             if img_info.get('original_name') == img_url:
                 return self._get_image_info_dict(img_name)
         
+        # 最后尝试：如果img_url包含角色ID和立绘类型，直接分割查找
+        if '_' in img_url:
+            parts = img_url.split('_')
+            if len(parts) >= 3:
+                # 格式可能是：角色ID_立绘类型_图片名
+                possible_name = img_url
+                if possible_name in self.image_data:
+                    return self._get_image_info_dict(possible_name)
+        
         self.PRINT(f"图片 {img_url} 不存在于数据中", colors=(255, 200, 200))
         return None
+# ERAconsole.py
 
     def _get_image_info_dict(self, img_name):
-        """获取图片信息字典"""
+        """获取图片信息字典 - 修复版"""
         if img_name not in self.image_data:
             return None
         
         img_info = self.image_data[img_name]
+        
         return {
             'path': os.path.join(img_info['base_dir'], img_info['filename']),
-            'original_width': img_info['width'],
+            
+            # 这里的 width/height 其实是 CSV 里指定的裁剪大小
+            'original_width': img_info['width'], 
             'original_height': img_info['height'],
+            
+            # [修复核心] 必须把 CSV 里的 x, y 传过去！
+            # 映射为 loader 识别的 key: clip_x, clip_y
+            'clip_x': img_info.get('x', 0),
+            'clip_y': img_info.get('y', 0),
+            
             'chara_id': img_info.get('chara_id'),
             'draw_type': img_info.get('draw_type'),
             'original_name': img_info.get('original_name')
         }
 
+    # 在ERAconsole.py中修改_print_image_stack方法
     def _print_image_stack(self, img_list, clip_pos=None, size=None, click=None, chara_id=None, draw_type=None):
         """
-        处理图片列表叠加显示
+        处理图片列表叠加显示 - 修复版
         
         Args:
-            img_list: 图片列表，可以是：
-                    1. 字符串列表：["img1", "img2", ...]
-                    2. 字典列表：[{"img": "img1", "draw_type": "type1"}, ...]
+            img_list: 图片列表
         """
         try:
-            processed_images = []
+            stack_elements = []  # 存储每个图片元素的字符串
+            max_height = 0       # 计算最高图片高度
             
             for img_item in img_list:
+                # 初始化图片特定参数
+                item_params = {}
+                
                 # 处理不同类型的图片项
                 if isinstance(img_item, dict):
-                    # 字典格式：{"img": 图片名, "draw_type": 立绘类型, "chara_id": 角色ID}
                     img_url = img_item.get('img')
                     item_draw_type = img_item.get('draw_type', draw_type)
                     item_chara_id = img_item.get('chara_id', chara_id)
-                    item_click = img_item.get('click',click)
-                    item_size = img_item.get('size',size)
-                    item_offset=img_item.get('offset',(0,0))
+                    item_click = img_item.get('click', click)
+                    item_size = img_item.get('size', size)
+                    item_clip = img_item.get('clip', clip_pos)
+                    item_offset = img_item.get('offset',(0,0))
+                    
+                    # 保存图片特定参数
+                    if item_clip:
+                        item_params['clip'] = f"({item_clip[0]},{item_clip[1]})"
+                    if item_size:
+                        item_params['size'] = f"({item_size[0]},{item_size[1]})"
+                        max_height = max(max_height, item_size[1])
+                    if item_click:
+                        item_params['click'] = str(item_click)  # 确保为字符串
+                    if item_chara_id:
+                        item_params['chara'] = str(item_chara_id)
+                    if item_draw_type:
+                        item_params['type'] = str(item_draw_type)
+                    if item_offset and item_offset != (0, 0):
+                        item_params['offset'] = f"({item_offset[0]},{item_offset[1]})"
+                        
                 else:
-                    # 字符串格式：直接是图片名,但是只能支持全局配置
-                    # 简单搭配
+                    # 字符串格式
                     img_url = img_item
                     item_draw_type = draw_type
                     item_chara_id = chara_id
+                    item_click = click
+                    item_size = size
+                    item_clip = clip_pos
+                    item_offset = (0, 0)
+                    
+                    # 使用全局参数
+                    if clip_pos:
+                        item_params['clip'] = f"({clip_pos[0]},{clip_pos[1]})"
+                    if size:
+                        item_params['size'] = f"({size[0]},{size[1]})"
+                        max_height = max(max_height, size[1])
+                    if click:
+                        item_params['click'] = str(click)  # 确保为字符串
+                    if chara_id:
+                        item_params['chara'] = str(chara_id)
+                    if draw_type:
+                        item_params['type'] = str(draw_type)
                 
-                # 查找图片信息
+                # 查找图片信息 - 修复：优先使用原始名称
                 img_info = self._find_image_info(img_url, item_chara_id, item_draw_type)
                 if not img_info:
                     self.PRINT(f"图片 {img_url} 不存在于数据中", colors=(255, 200, 200))
                     continue
                 
-                # 使用图片名作为唯一标识
-                img_name = img_info.get('original_name', img_url)
-                if item_chara_id and item_draw_type:
-                    img_name = f"{item_chara_id}_{item_draw_type}_{img_name}"
+                # 使用原始图片名作为标识
+                original_name = img_info.get('original_name', img_url)
                 
-                # 注册图片信息
-                self.loader.register_image_info(img_name, img_info)
-                processed_images.append(img_name)
+                # 构建唯一的图片标识符
+                if item_chara_id and item_draw_type:
+                    img_identifier = f"{item_chara_id}_{item_draw_type}_{original_name}"
+                else:
+                    img_identifier = original_name
+                
+                # 注册图片信息（使用原始名称）
+                self.loader.register_image_info(img_identifier, img_info)
+                
+                # 如果没有size参数，使用图片原始高度
+                if not item_size:
+                    original_height = img_info.get('original_height', 270)
+                    max_height = max(max_height, original_height)
+                
+                # 构建图片元素字符串 - 修复：使用逗号分隔元素
+                element_str = f"{img_identifier}"
+                
+                # 如果有参数，添加到元素中
+                if item_params:
+                    # 将参数字典转换为字符串：clip:(x,y),size:(w,h),click:value
+                    #params_str = ','.join([f"{key}:{value}" for key, value in item_params.items()])
+                    params_str = ';'.join([f"{key}:{value}" for key, value in item_params.items()])
+                    element_str += f"{{{params_str}}}"
+                
+                stack_elements.append(element_str)
             
-            if not processed_images:
+            if not stack_elements:
                 self.PRINT("图片列表为空或所有图片都不存在", colors=(255, 200, 200))
                 return
             
-            # 构建图片叠加标记
-            # 格式: [IMG_STACK:img1,{clip:(x,x),size:(x,y),click:click_value,chara:chara_id,type:draw_type}|img2.....]
-            #渲染底层透明模板时高取最高图片的高，宽取屏幕的宽
-            #param_str = f"img_list={','.join(processed_images)}"
-            for i in processed_images:
-                param_str = f"img_list={i},"
-                if clip_pos:
-                    param_str += f",clip:({clip_pos[0]},{clip_pos[1]})"
-                
-                if size:
-                    param_str += f",size:({size[0]},{size[1]})"
-                
-                if click:
-                    param_str += f",click:{click}"
-                
-                if chara_id:
-                    param_str += f",chara:{chara_id}"
-                
-                if draw_type:
-                    param_str += f",type:{draw_type}"
-                if item_offset:
-                    param_str += f",offset:({item_offset[0]},{item_offset[1]})"
-            # 创建特殊的图片叠加标记
-            stack_mark = f"[IMG_STACK:{processed_images[0]}|{param_str}]"
+            # 构建完整的图片叠加标记 - 修复：使用逗号分隔元素
+            # 格式: [IMG_STACK:img1{clip:(x,y),size:(w,h),click:value},img2{...}]
+            stack_content = '|'.join(stack_elements)
+            stack_mark = f"[IMG_STACK:{stack_content}]"
+            
+            # 计算模板尺寸
+            template_width = self.screen_width - 20
+            template_height = max_height
             
             # 添加到动态加载器
-            if click:
-                self.loader.add_image_mark(stack_mark, click)
-            else:
-                self.loader.add_image_mark(stack_mark)
+            click_value = str(click) if click else None
+            self.loader.add_image_mark(stack_mark, click_value, template_width, template_height)
             
             # 刷新显示
             self._draw_display()
