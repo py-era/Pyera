@@ -1,0 +1,8 @@
+{
+    "window_title": "ERA Console",
+    "font_path": "./font/luoli.ttf",
+    "font_size": 24,
+    "screen_width": 2000,
+    "screen_height": 1200,
+    "log_file": "./logs/game_log.txt"
+}

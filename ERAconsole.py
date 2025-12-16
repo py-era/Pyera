@@ -17,15 +17,45 @@ class SimpleERAConsole:
 
     def __init__(self):
         pygame.init()
-        self.screen_width = 2000
-        self.screen_height = 1200
+        
+        # 默认配置
+        self.default_config = {
+            "window_title": "ERA Console---",
+            "font_path": "./font/luoli.ttf",
+            "font_size": 24,
+            "screen_width": 2000,
+            "screen_height": 1200,
+            "log_file": "./logs/game_log.txt"
+        }
+        
+        # 加载配置文件
+        self.config = self._load_config()
+        
+        # 使用配置或默认值
+        self.screen_width = self.config.get("screen_width", self.default_config["screen_width"])
+        self.screen_height = self.config.get("screen_height", self.default_config["screen_height"])
+        
+        # 创建屏幕
         self.screen = pygame.display.set_mode(
             (self.screen_width, self.screen_height))
-        pygame.display.set_caption("ERA Console")
+        pygame.display.set_caption(self.config.get("window_title", self.default_config["window_title"]))
 
         # 字体设置
-        self.font = pygame.font.Font('./font/luoli.ttf', 24)
-        self.line_height = 30
+        font_path = self.config.get("font_path", self.default_config["font_path"])
+        font_size = self.config.get("font_size", self.default_config["font_size"])
+        
+        # 检查字体文件是否存在
+        if not os.path.exists(font_path):
+            self._show_warning(f"字体文件未找到: {font_path}，将使用系统默认字体")
+            self.font = pygame.font.Font(None, font_size)  # 使用系统默认字体
+        else:
+            try:
+                self.font = pygame.font.Font(font_path, font_size)
+            except Exception as e:
+                self._show_warning(f"加载字体失败: {e}，将使用系统默认字体")
+                self.font = pygame.font.Font(None, font_size)
+        
+        self.line_height = font_size + 6  # 行高根据字体大小调整
 
         # 输入区域高度
         self.input_area_height = 40
@@ -36,7 +66,7 @@ class SimpleERAConsole:
             screen_height=self.screen_height,
             font=self.font,
             input_area_height=self.input_area_height,
-            log_file="./logs/game_log.txt"
+            log_file=self.config.get("log_file", self.default_config["log_file"])
         )
 
         # 输入相关
@@ -57,10 +87,65 @@ class SimpleERAConsole:
         # 图片数据相关
         self.image_data = {}  # 图片数据字典，键为"角色ID_图片名"，值为图片信息
         self.chara_images = {}  # 角色立绘字典，键为角色ID，值为该角色下的图片列表
-        # 添加示例文本用于测试滚动
-        # self._add_test_content()
-        #状态大字典
+        # 状态大字典
         self.allstate = {}
+
+    def _load_config(self):
+        """加载配置文件"""
+        config_file = "config.json"
+        
+        # 如果配置文件不存在，创建默认配置文件
+        if not os.path.exists(config_file):
+            self._create_default_config(config_file)
+            return self.default_config.copy()
+        
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            # 验证必要配置项
+            self._validate_config(config)
+            
+            # 输出加载的配置信息
+            print(f"已加载配置文件: {config_file}")
+            for key, value in config.items():
+                print(f"  {key}: {value}")
+            
+            return config
+        except json.JSONDecodeError as e:
+            print(f"配置文件格式错误: {e}，使用默认配置")
+            return self.default_config.copy()
+        except Exception as e:
+            print(f"加载配置文件失败: {e}，使用默认配置")
+            return self.default_config.copy()
+
+    def _create_default_config(self, config_file):
+        """创建默认配置文件"""
+        try:
+            with open(config_file, 'w', encoding='utf-8') as f:
+                json.dump(self.default_config, f, indent=4, ensure_ascii=False)
+            print(f"已创建默认配置文件: {config_file}")
+        except Exception as e:
+            print(f"创建默认配置文件失败: {e}")
+
+    def _validate_config(self, config):
+        """验证配置项"""
+        # 检查必要的配置项，如果不存在则添加默认值
+        for key, default_value in self.default_config.items():
+            if key not in config:
+                config[key] = default_value
+                print(f"警告: 配置文件中缺少 '{key}'，已使用默认值: {default_value}")
+        
+        # 验证屏幕尺寸
+        if config["screen_width"] < 800 or config["screen_height"] < 600:
+            print("警告: 屏幕尺寸过小，已调整为最小值")
+            config["screen_width"] = max(config["screen_width"], 800)
+            config["screen_height"] = max(config["screen_height"], 600)
+
+    def _show_warning(self, message):
+        """显示警告信息（控制台输出）"""
+        print(f"警告: {message}")
+
     def set_font(self, font_path, font_size=24):
         """
         更改字体文件，只影响后续的输出

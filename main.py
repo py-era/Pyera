@@ -8,6 +8,11 @@ from dynamic_loader import DynamicLoader, ContentType, InlineFragment  # 导入�
 from clickable import ClickableString
 from ERAconsole import SimpleERAConsole
 from Eventmanger import EventManager
+import tkinter
+import tkinter.ttk
+import tkinter.filedialog
+import tkinter.messagebox
+import tkinter.scrolledtext
 # 这是一个快捷调用的东西，为了让PRINT变得强强
 
 

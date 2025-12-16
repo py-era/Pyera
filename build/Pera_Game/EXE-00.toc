@@ -72,7 +72,7 @@
  [],
  False,
  False,
- 1765815829,
+ 1765890854,
  [('runw.exe',
    'D:\\lingdong\\Pera\\.venv\\Lib\\site-packages\\PyInstaller\\bootloader\\Windows-64bit-intel\\runw.exe',
    'EXECUTABLE')],

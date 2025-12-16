@@ -11,77 +11,96 @@ class EventManager:
         
         self.load_events()
 
-    def load_events(self, is_reload=False):  # [修改1] 增加参数
-        """动态加载事件文件"""
-        import importlib
-        import os
-        import sys
+    def load_events(self, is_reload=False):
+            """动态加载事件文件 (兼容 PyInstaller 打包)"""
+            import importlib
+            import os
+            import sys
+            
+            # 1. 获取程序的根目录 (兼容源码运行和打包后的 exe)
+            if getattr(sys, 'frozen', False):
+                # 如果是打包后的 exe，根目录是 exe 所在的文件夹
+                root_dir = os.path.dirname(sys.executable)
+            else:
+                # 如果是源码运行，根目录是当前文件所在文件夹
+                root_dir = os.path.dirname(os.path.abspath(__file__))
 
-        events_dir = "./events"
-        if not os.path.exists(events_dir):
-            os.makedirs(events_dir)
+            # 2. 定位 events 文件夹
+            events_dir = os.path.join(root_dir, "events")
+            
+            # [核心修复] 将根目录加入 sys.path，这样才能识别 "import events.xxx"
+            if root_dir not in sys.path:
+                sys.path.insert(0, root_dir)
 
-        if events_dir not in sys.path:
-            sys.path.insert(0, events_dir)
+            if not os.path.exists(events_dir):
+                self.console.PRINT(f"警告: 未找到事件目录 {events_dir}", colors=(255, 100, 100))
+                return # 或者 os.makedirs(events_dir)
 
-        # [修改2] 如果是重载模式，先清空旧的事件字典，防止残留
-        if is_reload:
-            self.events = {}
-            self.eventid = {}
-            self.console.PRINT("正在清理旧事件缓存...", colors=(150, 150, 150))
+            # [修改] 重载清理逻辑
+            if is_reload:
+                self.events = {}
+                self.eventid = {}
+                # 清理 sys.modules 中的旧缓存，强制重新读取文件
+                # 这一步对于热重载非常重要
+                modules_to_remove = [m for m in sys.modules if m.startswith('events.')]
+                for m in modules_to_remove:
+                    del sys.modules[m]
+                
+                self.console.PRINT("正在清理旧事件缓存...", colors=(150, 150, 150))
 
-        # 遍历文件
-        for root, dirs, files in os.walk(events_dir):
-            for file in files:
-                if file.endswith(".py") and file != "__init__.py":
-                    relative_path = os.path.relpath(root, events_dir)
+            # 3. 遍历文件
+            for root, dirs, files in os.walk(events_dir):
+                for file in files:
+                    if file.endswith(".py") and file != "__init__.py":
+                        # 计算相对路径，用于构建模块名
+                        # 例如: root=D:\Game\events, file=start.py -> relative_path=.
+                        try:
+                            relative_path = os.path.relpath(root, events_dir)
+                        except ValueError:
+                            continue
 
-                    if relative_path == ".":
-                        module_name = f"events.{file[:-3]}"
-                    else:
-                        module_path = relative_path.replace(os.sep, ".")
-                        module_name = f"events.{module_path}.{file[:-3]}"
-
-                    try:
-                        # [修改3] 核心重载逻辑
-                        if is_reload and module_name in sys.modules:
-                            # 如果模块已存在，强制重载！
-                            module = sys.modules[module_name]
-                            module = importlib.reload(module)
+                        if relative_path == ".":
+                            module_name = f"events.{file[:-3]}"
                         else:
-                            # 第一次加载
-                            module = importlib.import_module(module_name)
-
-                        # 重新注册事件函数
-                        for attr_name in dir(module):
-                            if attr_name.startswith("event_"):
-                                event_func = getattr(module, attr_name)
-                                event_key = attr_name[6:]
-                                event_id = getattr(event_func, 'event_trigger', event_key)
-                                
-                                # [新增] 读取是否为主事件标记，默认为 False
-                                is_main = getattr(event_func, 'is_main_event', False)
-                                
-                                self.events[event_key] = event_func
-                                self.eventid[event_id] = event_key
-                                
-                                # 存储元数据
-                                self.events_meta[event_key] = {
-                                    'is_main': is_main
-                                }
-
-                                if not is_reload:
-                                    # 可以打印出来方便调试
-                                    tag = "[主]" if is_main else ""
-                                    self.console.PRINT(f"已加载事件: {event_key} {tag}")
-
-                    except Exception as e:
-                        self.console.PRINT(
-                            f"加载事件失败 {module_name}: {e}", colors=(255, 200, 200))
-
-        if is_reload:
-            self.console.PRINT(
-                f"重载完成，当前共有 {len(self.events)} 个事件。", colors=(100, 255, 100))
+                            # 处理子文件夹情况
+                            sub_pkg = relative_path.replace(os.sep, ".")
+                            module_name = f"events.{sub_pkg}.{file[:-3]}"
+                        
+                        try:
+                            # 4. 动态导入
+                            if module_name in sys.modules:
+                                module = importlib.reload(sys.modules[module_name])
+                            else:
+                                module = importlib.import_module(module_name)
+                            
+                            # 5. 注册事件
+                            for attr_name in dir(module):
+                                if attr_name.startswith("event_"):
+                                    event_func = getattr(module, attr_name)
+                                    event_key = attr_name[6:]
+                                    # 兼容没有定义 event_trigger 的情况
+                                    event_id = getattr(event_func, 'event_trigger', event_key)
+                                    
+                                    # 读取是否为主事件标记
+                                    is_main = getattr(event_func, 'is_main_event', False)
+                                    
+                                    self.events[event_key] = event_func
+                                    self.eventid[event_id] = event_key
+                                    
+                                    # 存入元数据
+                                    self.events_meta[event_key] = {'is_main': is_main}
+                                    
+                                    if not is_reload:
+                                        tag = "[主]" if is_main else ""
+                                        self.console.PRINT(f"已加载事件: {event_key} {tag}")
+                                        
+                        except Exception as e:
+                            # 打印详细错误方便调试
+                            print(f"Failed to load {module_name}: {e}") 
+                            self.console.PRINT(f"加载失败 {module_name}: {e}", colors=(255, 200, 200))
+            
+            if is_reload:
+                self.console.PRINT(f"重载完成，当前共有 {len(self.events)} 个事件。", colors=(100, 255, 100))
 
     def trigger_event(self, event_name, things_instance,silent=False):
             if event_name in self.events:
