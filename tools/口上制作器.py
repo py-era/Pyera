@@ -12,7 +12,7 @@ class KojoEditorApp:
         print(list(self.meta.keys()))
         print("=====================================\n")
 
-        self.root.title("Pera 口上制作工坊 v3.0 (多差分整合版)")
+        self.root.title("Pera 口上制作工坊 v3.3 (多差分整合版)")
         self.root.geometry("1300x850")
         
         # [核心变更] 数据模型现在是一个列表，存储多个 Root 节点
