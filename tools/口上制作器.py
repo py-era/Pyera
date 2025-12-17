@@ -12,7 +12,7 @@ class KojoEditorApp:
         print(list(self.meta.keys()))
         print("=====================================\n")
 
-        self.root.title("Pera 口上制作工坊 v3.3 (多差分整合版)")
+        self.root.title("Pera 口上制作工坊 v4.3 (可以修改变量版本)")
         self.root.geometry("1300x850")
         
         # [核心变更] 数据模型现在是一个列表，存储多个 Root 节点
@@ -108,6 +108,8 @@ class KojoEditorApp:
         self.context_menu.add_command(label="📝 添加文本 (PRINT)", command=self.add_text_node)
         self.context_menu.add_command(label="🔗 调用其他事件 (CALL)", command=self.add_call_node)
         self.context_menu.add_command(label="🖼️ 添加图片 (PRINTIMG)", command=self.add_image_node)
+        # [新增] 属性修改
+        self.context_menu.add_command(label="✏️ 修改属性 (SET)", command=self.add_set_node)
         self.context_menu.add_separator()
         self.context_menu.add_command(label="🧩 插入模板 (JSON)", command=self.insert_template)
         self.context_menu.add_separator()
@@ -127,7 +129,16 @@ class KojoEditorApp:
         # 默认展开所有根节点
         for item in self.tree_widget.get_children():
             self.tree_widget.item(item, open=True)
-
+    def add_set_node(self):
+            self.add_child_node({
+                'type': 'set', 
+                'name': '修改属性', 
+                'var_type': 'CFLAG', 
+                'var_scope': 'TARGET',
+                'var_name': '', 
+                'operator': '+=', 
+                'value': '1'
+            })
     def _build_tree_recursive(self, parent_id, node_data):
         display_text = node_data.get('name', '未命名')
         tags = ()
@@ -155,7 +166,12 @@ class KojoEditorApp:
             img = node_data.get('img_key', '未选择')
             display_text = f"🖼️ [立绘] {img}"
             tags = ('image',)
-        
+        elif node_data['type'] == 'set':
+            op = node_data.get('operator', '=')
+            val = node_data.get('value', '0')
+            name = node_data.get('var_name', '??')
+            display_text = f"✏️ [SET] {name} {op} {val}"
+            tags = ('set',)
         item_id = self.tree_widget.insert(parent_id, 'end', text=display_text, tags=tags)
         self.node_map[item_id] = node_data
         self.parent_map[item_id] = parent_id
@@ -263,7 +279,54 @@ class KojoEditorApp:
             
             # 初始化界面状态
             self.on_type_changed(None, initial_value=node.get('var_name', ''))
-
+        elif node['type'] == 'set':
+            tk.Label(self.frame_right, text="属性修改设定", font=('bold', 10)).pack(pady=5)
+            
+            frame_set = tk.Frame(self.frame_right)
+            frame_set.pack(fill=tk.X, padx=5)
+            
+            # 1. 变量类型 (去掉 SYS，因为 SYS 通常不可写)
+            valid_types = [k for k in self.meta.keys() if k not in ['CHARAS', 'IMAGES', 'EVENTS', 'SYS']]
+            if not valid_types: valid_types = ['CFLAG']
+            
+            self.cmb_var_type = ttk.Combobox(frame_set, values=valid_types, width=8, state="readonly")
+            self.cmb_var_type.set(node.get('var_type', valid_types[0]))
+            self.cmb_var_type.pack(side=tk.LEFT)
+            self.cmb_var_type.bind("<<ComboboxSelected>>", self.on_type_changed)
+            
+            # 2. 对象 (Scope)
+            self.frame_scope = tk.Frame(frame_set)
+            self.frame_scope.pack(side=tk.LEFT)
+            tk.Label(self.frame_scope, text=":").pack(side=tk.LEFT)
+            
+            scope_opts = ['TARGET', 'MASTER', 'PLAYER'] + self.meta.get('CHARAS', [])
+            self.cmb_var_scope = ttk.Combobox(self.frame_scope, values=scope_opts, width=8, state="readonly")
+            self.cmb_var_scope.set(node.get('var_scope', 'TARGET'))
+            self.cmb_var_scope.pack(side=tk.LEFT)
+            
+            # 3. 变量名
+            tk.Label(frame_set, text=":").pack(side=tk.LEFT)
+            self.cmb_var_name = ttk.Combobox(frame_set, width=12)
+            self.cmb_var_name.pack(side=tk.LEFT)
+            
+            # 4. 运算符 (+=, -=, =)
+            self.cmb_op = ttk.Combobox(frame_set, values=['=', '+=', '-='], width=3, state="readonly")
+            self.cmb_op.set(node.get('operator', '+='))
+            self.cmb_op.pack(side=tk.LEFT, padx=5)
+            
+            # 5. 数值
+            self.entry_val = tk.Entry(frame_set, width=5)
+            self.entry_val.insert(0, node.get('value', '0'))
+            self.entry_val.pack(side=tk.LEFT)
+            
+            # 预览
+            self.lbl_preview = tk.Label(self.frame_right, text="", fg="green", bg="#eee")
+            self.lbl_preview.pack(fill=tk.X, padx=5, pady=5)
+            
+            tk.Button(self.frame_right, text="保存修改", command=lambda: self.save_node_data(node)).pack(pady=5)
+            
+            # 初始化联动
+            self.on_type_changed(None, initial_value=node.get('var_name', ''))
         elif node['type'] == 'text':
             tk.Label(self.frame_right, text="文本内容", font=('bold', 10)).pack(pady=5)
             
@@ -458,7 +521,42 @@ class KojoEditorApp:
             node['event_type_filter'] = self.event_type_var.get() if hasattr(self, 'event_type_var') else "所有事件"
         elif node['type'] == 'image':
             node['img_key'] = self.cmb_img.get()
-            
+        elif node['type'] == 'set':
+                    node['var_type'] = self.cmb_var_type.get()
+                    node['var_scope'] = self.cmb_var_scope.get()
+                    node['var_name'] = self.cmb_var_name.get()
+                    node['operator'] = self.cmb_op.get()
+                    node['value'] = self.entry_val.get()
+                    
+                    v_type = node['var_type']
+                    v_scope = node['var_scope']
+                    v_name = node['var_name']
+                    op = node['operator']
+                    val = node['value']
+                    
+                    # 构建代码预览
+                    # 1. 确定对象引用代码
+                    if v_scope == 'TARGET':
+                        target_code = "" # 默认
+                    elif v_scope in ['MASTER', 'PLAYER']:
+                        target_code = f", chara_id=kojo.{v_scope}"
+                    else:
+                        target_code = f", chara_id='{v_scope}'"
+
+                    # 2. 生成逻辑
+                    if op == '=':
+                        # 直接设置: kojo.CFLAG.set('好感度', 100)
+                        code = f"kojo.{v_type}.set('{v_name}', {val}{target_code})"
+                    else:
+                        # 增减: 需要先读取，再写入
+                        # current = int(kojo.CFLAG.get('好感度', 0))
+                        # kojo.CFLAG.set('好感度', current + 100)
+                        
+                        # 为了预览简洁，这里只显示逻辑注释
+                        # 实际编译时我们会生成多行代码
+                        code = f"# {v_type}:{v_name} {op} {val}"
+                        
+                    self.lbl_preview.config(text=code)
         self.refresh_tree_view()
         messagebox.showinfo("提示", "节点已更新")
 
