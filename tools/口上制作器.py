@@ -12,7 +12,7 @@ class KojoEditorApp:
         print(list(self.meta.keys()))
         print("=====================================\n")
 
-        self.root.title("Pera 口上制作工坊 v4.3 (可以修改变量版本)")
+        self.root.title("Pera 口上制作工坊 v5.3 (新增菜单输入功能)")
         self.root.geometry("1300x850")
         
         # [核心变更] 数据模型现在是一个列表，存储多个 Root 节点
@@ -108,13 +108,46 @@ class KojoEditorApp:
         self.context_menu.add_command(label="📝 添加文本 (PRINT)", command=self.add_text_node)
         self.context_menu.add_command(label="🔗 调用其他事件 (CALL)", command=self.add_call_node)
         self.context_menu.add_command(label="🖼️ 添加图片 (PRINTIMG)", command=self.add_image_node)
+        self.context_menu.add_command(label="🔘 添加选项菜单 (MENU)", command=self.add_menu_node)
         # [新增] 属性修改
         self.context_menu.add_command(label="✏️ 修改属性 (SET)", command=self.add_set_node)
         self.context_menu.add_separator()
         self.context_menu.add_command(label="🧩 插入模板 (JSON)", command=self.insert_template)
         self.context_menu.add_separator()
         self.context_menu.add_command(label="❌ 删除此节点", command=self.delete_node, foreground="red")
+    def add_menu_node(self):
+            """添加一个包含多个选项的菜单节点"""
+            parent, ui_id = self.get_selected_node()
+            if not parent: return
+            
+            # 默认创建两个选项
+            new_node = {
+                'type': 'menu',
+                'name': '选项菜单',
+                'variable': 'menu_res', # 存储输入的变量名
+                'options': [
+                    {'label': '是', 'value': '1'},
+                    {'label': '否', 'value': '0'}
+                ],
+                'children': [] 
+            }
+            
+            # 自动为每个选项创建对应的分支节点
+            # 注意：这里我们预先创建好 children 结构，代表每个选项的后续逻辑
+            for opt in new_node['options']:
+                branch_node = {
+                    'type': 'menu_case', # 特殊类型的分支
+                    'name': f"当选择 [{opt['value']}] 时",
+                    'value': opt['value'],
+                    'children': []
+                }
+                new_node['children'].append(branch_node)
 
+            if 'children' not in parent: parent['children'] = []
+            parent['children'].append(new_node)
+            
+            self.refresh_tree_view()
+            if ui_id: self.tree_widget.item(ui_id, open=True)
     # ================= 核心逻辑：树的构建 =================
 
     def refresh_tree_view(self):
@@ -156,6 +189,14 @@ class KojoEditorApp:
             content = node_data.get('content', '')
             display_text = f"💬 {content[:20]}"
             tags = ('text',)
+        elif node_data['type'] == 'menu':
+            opts = "/".join([o['label'] for o in node_data.get('options', [])])
+            display_text = f"🔘 [菜单] {opts}"
+            tags = ('menu',)
+        elif node_data['type'] == 'menu_case':
+            val = node_data.get('value', '?')
+            display_text = f"↳ 选中 [{val}]"
+            tags = ('menu_case',)
         elif node_data['type'] == 'call':
             evt = node_data.get('target_event', '未选择')
             # 获取事件类型标记
@@ -179,7 +220,42 @@ class KojoEditorApp:
         if 'children' in node_data:
             for child in node_data['children']:
                 self._build_tree_recursive(item_id, child)
+    def modify_menu_opts(self, node, delta):
+        """增加或减少选项数量"""
+        options = node.get('options', [])
+        if delta > 0:
+            new_val = str(len(options) + 1)
+            options.append({'label': '新选项', 'value': new_val})
+            # 同时增加子节点
+            node['children'].append({
+                'type': 'menu_case', 
+                'name': f"当选择 [{new_val}] 时", 
+                'value': new_val, 
+                'children': []
+            })
+        elif delta < 0 and options:
+            options.pop()
+            if node['children']: node['children'].pop()
+            
+        self.render_editor(node, self.tree_widget.selection()[0]) # 刷新右侧
 
+    def save_menu_data(self, node):
+        """保存菜单配置"""
+        new_options = []
+        # 读取输入框
+        for i, (e_lbl, e_val) in enumerate(self.opt_entries):
+            val = e_val.get()
+            label = e_lbl.get()
+            new_options.append({'label': label, 'value': val})
+            
+            # 同步更新对应的子节点名称
+            if i < len(node['children']):
+                node['children'][i]['value'] = val
+                node['children'][i]['name'] = f"当选择 [{val}] 时"
+
+        node['options'] = new_options
+        self.refresh_tree_view()
+        messagebox.showinfo("提示", "菜单结构已更新")
     # ================= 交互逻辑 =================
 
     def on_tree_select(self, event):
@@ -279,6 +355,46 @@ class KojoEditorApp:
             
             # 初始化界面状态
             self.on_type_changed(None, initial_value=node.get('var_name', ''))
+        elif node['type'] == 'menu':
+            tk.Label(self.frame_right, text="[选项菜单设置]", font=('bold', 12)).pack(pady=5)
+            
+            # 选项列表容器
+            self.frame_opts = tk.Frame(self.frame_right)
+            self.frame_opts.pack(fill=tk.BOTH, expand=True, padx=5)
+            
+            tk.Label(self.frame_opts, text="选项列表 (显示文本 | 返回值):").pack(anchor=tk.W)
+            
+            # 动态生成输入框
+            self.opt_entries = []
+            options = node.get('options', [])
+            
+            for i, opt in enumerate(options):
+                f = tk.Frame(self.frame_opts)
+                f.pack(fill=tk.X, pady=2)
+                
+                tk.Label(f, text=f"选项 {i+1}:").pack(side=tk.LEFT)
+                e_lbl = tk.Entry(f, width=15)
+                e_lbl.insert(0, opt['label'])
+                e_lbl.pack(side=tk.LEFT, padx=2)
+                
+                tk.Label(f, text="值:").pack(side=tk.LEFT)
+                e_val = tk.Entry(f, width=5)
+                e_val.insert(0, opt['value'])
+                e_val.pack(side=tk.LEFT, padx=2)
+                
+                self.opt_entries.append((e_lbl, e_val))
+            
+            # 操作按钮
+            btn_frame = tk.Frame(self.frame_right)
+            btn_frame.pack(fill=tk.X, pady=10)
+            
+            tk.Button(btn_frame, text="+ 增加选项", command=lambda: self.modify_menu_opts(node, 1)).pack(side=tk.LEFT, padx=5)
+            tk.Button(btn_frame, text="- 减少选项", command=lambda: self.modify_menu_opts(node, -1)).pack(side=tk.LEFT, padx=5)
+            tk.Button(btn_frame, text="保存并刷新结构", command=lambda: self.save_menu_data(node), bg="#c8e6c9").pack(side=tk.RIGHT, padx=5)
+
+        elif node['type'] == 'menu_case':
+            tk.Label(self.frame_right, text="这是由菜单自动生成的分支节点", fg="gray").pack(pady=20)
+            tk.Label(self.frame_right, text=f"当用户输入 '{node.get('value')}' 时执行此处逻辑").pack()
         elif node['type'] == 'set':
             tk.Label(self.frame_right, text="属性修改设定", font=('bold', 10)).pack(pady=5)
             
@@ -723,7 +839,44 @@ class KojoEditorApp:
                         self._compile_node(child, lines, indent + 1)
                 else:
                     lines.append(f"{prefix}    pass")
+            elif node['type'] == 'menu':
+                # 1. 生成显示代码
+                # 使用列表推导式生成 cs 字符串
+                # this.console.PRINT(this.cs("[1] 是").click("1"), "   ", this.cs("[2] 否").click("2"))
                 
+                menu_code_parts = []
+                for opt in node.get('options', []):
+                    label = opt['label']
+                    val = opt['value']
+                    # 格式: [值] 文本
+                    btn_text = f"[{val}] {label}"
+                    # 生成代码片段: this.cs("...").click("...")
+                    menu_code_parts.append(f'this.cs("{btn_text}").click("{val}")')
+                
+                # 拼接代码，中间加空格
+                menu_args = ', "   ", '.join(menu_code_parts)
+                lines.append(f'{prefix}this.console.PRINT({menu_args})')
+                
+                # 2. 生成输入代码
+                var_name = "menu_res" # 临时变量名
+                lines.append(f'{prefix}{var_name} = this.console.INPUT()')
+                
+                # 3. 生成分支逻辑 (遍历 children)
+                # children[0] 是第一个选项的分支，children[1] 是第二个...
+                
+                for i, child in enumerate(node.get('children', [])):
+                    val = child.get('value', '')
+                    if i == 0:
+                        lines.append(f'{prefix}if {var_name} == "{val}":')
+                    else:
+                        lines.append(f'{prefix}elif {var_name} == "{val}":')
+                    
+                    # 递归编译 menu_case 的子节点
+                    if 'children' in child and child['children']:
+                        for grand_child in child['children']:
+                            self._compile_node(grand_child, lines, indent + 1)
+                    else:
+                        lines.append(f'{prefix}    pass')
             elif node['type'] == 'text':
                 color = node.get('color', 'COL_TALK')
                 content_raw = node.get('content', '')
