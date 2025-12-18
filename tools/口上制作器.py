@@ -6,256 +6,146 @@ class KojoEditorApp:
     def __init__(self, root, game_meta):
         self.root = root
         self.meta = game_meta 
-        
-        # [调试] 检查数据
-        print("\n=== GUI DEBUG: Received Meta Keys ===")
-        print(list(self.meta.keys()))
-        print("=====================================\n")
-
-        self.root.title("Pera 口上制作工坊 v5.3 (新增菜单输入功能)")
+        self.root.title("Pera 口上制作工坊 v6.0 (节点约束优化版)")
         self.root.geometry("1300x850")
         
-        # [核心变更] 数据模型现在是一个列表，存储多个 Root 节点
+        # 数据模型
         self.project_data = [] 
-        
         self.node_map = {} 
         self.parent_map = {}
         
+        # [新增] 记录展开状态的集合 {ui_id}
+        self.expanded_nodes = set()
+        
         self.setup_ui()
-        self.new_project() # 初始化一个空项目
-    def filter_events(self):
-        """根据选择的类型过滤事件列表"""
-        if not hasattr(self, 'all_events'):
-            return
-            
-        event_type = getattr(self, 'event_type_var', tk.StringVar(value="所有事件")).get()
-        
-        if event_type == "所有事件":
-            filtered_events = self.all_events
-        elif event_type == "仅主事件":
-            # 过滤主事件
-            filtered_events = [
-                event for event in self.all_events 
-                if self.events_meta.get(event, {}).get('is_main', False)
-            ]
-        else:  # "仅普通事件"
-            # 过滤普通事件
-            filtered_events = [
-                event for event in self.all_events 
-                if not self.events_meta.get(event, {}).get('is_main', True)
-            ]
-        
-        # 更新下拉框选项
-        if hasattr(self, 'cmb_event'):
-            self.cmb_event['values'] = filtered_events
-            if filtered_events and not self.cmb_event.get():
-                self.cmb_event.current(0)
-    def on_event_search(self, event):
-        """事件搜索功能"""
-        if not hasattr(self, 'cmb_event') or not hasattr(self, 'all_events'):
-            return
-        
-        search_text = self.cmb_event.get().lower()
-        filtered = [evt for evt in self.all_events if search_text in evt.lower()]
-        
-        # 限制显示数量
-        if len(filtered) > 50:
-            filtered = filtered[:50] + [f"...等 {len(filtered)-50} 个事件"]
-        
-        self.cmb_event['values'] = filtered
+        self.new_project() 
+
     def setup_ui(self):
-        # --- 顶部工具栏 ---
+        # --- 工具栏 ---
         toolbar = tk.Frame(self.root, bd=1, relief=tk.RAISED)
         toolbar.pack(side=tk.TOP, fill=tk.X)
         
-        tk.Button(toolbar, text="📄 新建工程", command=self.new_project).pack(side=tk.LEFT, padx=2)
-        tk.Button(toolbar, text="💾 保存工程 (JSON)", command=self.save_project).pack(side=tk.LEFT, padx=2)
-        tk.Button(toolbar, text="📂 打开工程 (JSON)", command=self.load_project).pack(side=tk.LEFT, padx=2)
+        tk.Button(toolbar, text="📄 新建", command=self.new_project).pack(side=tk.LEFT, padx=2)
+        tk.Button(toolbar, text="💾 保存JSON", command=self.save_project).pack(side=tk.LEFT, padx=2)
+        tk.Button(toolbar, text="📂 打开JSON", command=self.load_project).pack(side=tk.LEFT, padx=2)
         
-        # 核心操作按钮
         tk.Button(toolbar, text="➕ 新建差分 (Root)", command=self.add_root_node, bg="#fff9c4").pack(side=tk.LEFT, padx=10)
-        
-        tk.Button(toolbar, text="🚀 导出完整脚本 (.py)", command=self.export_py, bg="#c8e6c9").pack(side=tk.RIGHT, padx=10)
+        tk.Button(toolbar, text="🚀 导出脚本 (.py)", command=self.export_py, bg="#c8e6c9").pack(side=tk.RIGHT, padx=10)
 
-        # --- 主体区域 ---
+        # --- 主体 ---
         paned = tk.PanedWindow(self.root, orient=tk.HORIZONTAL)
         paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # 左侧：逻辑树
-        frame_left = tk.LabelFrame(paned, text="口上差分结构树")
+        frame_left = tk.LabelFrame(paned, text="口上结构树")
         paned.add(frame_left, width=350)
         
         self.tree_widget = ttk.Treeview(frame_left)
         self.tree_widget.pack(fill=tk.BOTH, expand=True)
         
-        scrollbar = ttk.Scrollbar(frame_left, orient="vertical", command=self.tree_widget.yview)
-        scrollbar.place(relx=1, rely=0, relheight=1, anchor='ne')
-        self.tree_widget.configure(yscrollcommand=scrollbar.set)
-
+        # 绑定事件：记录展开/折叠状态
+        self.tree_widget.bind("<<TreeviewOpen>>", self.on_tree_open)
+        self.tree_widget.bind("<<TreeviewClose>>", self.on_tree_close)
         self.tree_widget.bind("<<TreeviewSelect>>", self.on_tree_select)
         self.tree_widget.bind("<Button-3>", self.show_context_menu)
 
-        # 右侧：属性编辑
+        # 属性编辑区
         self.frame_right = tk.LabelFrame(paned, text="节点属性编辑")
         paned.add(self.frame_right)
-        
         self.lbl_info = tk.Label(self.frame_right, text="请在左侧选择一个节点进行编辑", fg="gray")
         self.lbl_info.pack(pady=50)
         
         # --- 右键菜单 ---
         self.context_menu = Menu(self.root, tearoff=0)
-        self.context_menu.add_command(label="➕ 添加分支判断 (IF)", command=self.add_branch)
-        self.context_menu.add_command(label="📝 添加文本 (PRINT)", command=self.add_text_node)
-        self.context_menu.add_command(label="🔗 调用其他事件 (CALL)", command=self.add_call_node)
-        self.context_menu.add_command(label="🖼️ 添加图片 (PRINTIMG)", command=self.add_image_node)
-        self.context_menu.add_command(label="🔘 添加选项菜单 (MENU)", command=self.add_menu_node)
-        # [新增] 属性修改
-        self.context_menu.add_command(label="✏️ 修改属性 (SET)", command=self.add_set_node)
+        
+        # 子菜单：添加逻辑
+        self.menu_add = Menu(self.context_menu, tearoff=0)
+        self.menu_add.add_command(label="🔷 分支判断 (IF)", command=self.add_branch)
+        self.menu_add.add_command(label="🔘 选项菜单 (MENU)", command=self.add_menu_node)
+        self.menu_add.add_command(label="✏️ 修改属性 (SET)", command=self.add_set_node)
+        self.menu_add.add_separator()
+        self.menu_add.add_command(label="💬 文本 (PRINT)", command=self.add_text_node)
+        self.menu_add.add_command(label="🖼️ 图片 (PRINTIMG)", command=self.add_image_node)
+        self.menu_add.add_command(label="🔗 调用事件 (CALL)", command=self.add_call_node)
+        
+        self.context_menu.add_cascade(label="➕ 添加子节点", menu=self.menu_add)
         self.context_menu.add_separator()
-        self.context_menu.add_command(label="🧩 插入模板 (JSON)", command=self.insert_template)
-        self.context_menu.add_separator()
-        self.context_menu.add_command(label="❌ 删除此节点", command=self.delete_node, foreground="red")
-    def add_menu_node(self):
-            """添加一个包含多个选项的菜单节点"""
-            parent, ui_id = self.get_selected_node()
-            if not parent: return
-            
-            # 默认创建两个选项
-            new_node = {
-                'type': 'menu',
-                'name': '选项菜单',
-                'variable': 'menu_res', # 存储输入的变量名
-                'options': [
-                    {'label': '是', 'value': '1'},
-                    {'label': '否', 'value': '0'}
-                ],
-                'children': [] 
-            }
-            
-            # 自动为每个选项创建对应的分支节点
-            # 注意：这里我们预先创建好 children 结构，代表每个选项的后续逻辑
-            for opt in new_node['options']:
-                branch_node = {
-                    'type': 'menu_case', # 特殊类型的分支
-                    'name': f"当选择 [{opt['value']}] 时",
-                    'value': opt['value'],
-                    'children': []
-                }
-                new_node['children'].append(branch_node)
+        self.context_menu.add_command(label="🧩 插入模板", command=self.insert_template)
+        self.context_menu.add_command(label="❌ 删除节点", command=self.delete_node, foreground="red")
 
-            if 'children' not in parent: parent['children'] = []
-            parent['children'].append(new_node)
-            
-            self.refresh_tree_view()
-            if ui_id: self.tree_widget.item(ui_id, open=True)
-    # ================= 核心逻辑：树的构建 =================
+    # ================= 树的构建与状态保持 =================
+
+    def on_tree_open(self, event):
+        """记录展开的节点"""
+        item_id = self.tree_widget.focus()
+        self.expanded_nodes.add(item_id)
+
+    def on_tree_close(self, event):
+        """记录折叠的节点"""
+        item_id = self.tree_widget.focus()
+        if item_id in self.expanded_nodes:
+            self.expanded_nodes.remove(item_id)
 
     def refresh_tree_view(self):
+        # 1. 记录当前选中的节点和滚动位置 (如果能做到的话，这里简化为只保留展开状态)
+        selected = self.tree_widget.selection()
+        selected_id = selected[0] if selected else None
+        
+        # 2. 清空重建
         self.tree_widget.delete(*self.tree_widget.get_children())
         self.node_map = {}
         self.parent_map = {}
         
-        # 遍历所有根节点 (差分)
+        # 递归构建
+        # 注意：这里我们使用内存对象的 id() 作为 key 来追踪展开状态
+        # 因为 UI 的 item_id 每次重建都会变，无法用来持久化状态
+        # 所以我们需要维护一个 {data_node_id} 的集合
+        
         for root_node in self.project_data:
             self._build_tree_recursive("", root_node)
             
-        # 默认展开所有根节点
-        for item in self.tree_widget.get_children():
-            self.tree_widget.item(item, open=True)
-    def add_set_node(self):
-            self.add_child_node({
-                'type': 'set', 
-                'name': '修改属性', 
-                'var_type': 'CFLAG', 
-                'var_scope': 'TARGET',
-                'var_name': '', 
-                'operator': '+=', 
-                'value': '1'
-            })
+        # 3. 恢复选中状态 (如果可能)
+        # 由于 ID 变了，这里很难完美恢复选中，但可以尝试恢复展开
+        # 下面的 _build_tree_recursive 已经处理了展开逻辑
+
     def _build_tree_recursive(self, parent_id, node_data):
         display_text = node_data.get('name', '未命名')
-        tags = ()
+        tags = (node_data['type'],)
         
+        # 优化显示文本
         if node_data['type'] == 'root':
-            # 根节点显示更醒目
-            evt_id = node_data.get('event_id', '未设置ID')
-            display_text = f"📦 差分: {evt_id} ({display_text})"
-            tags = ('root',)
+            display_text = f"📦 差分: {node_data.get('event_id', '')}"
         elif node_data['type'] == 'branch':
-            cond = node_data.get('condition', 'True')
-            display_text = f"🔷 [IF] {cond}"
-            tags = ('branch',)
+            display_text = f"🔷 [IF] {node_data.get('condition', '?')}"
         elif node_data['type'] == 'text':
-            content = node_data.get('content', '')
-            display_text = f"💬 {content[:20]}"
-            tags = ('text',)
+            display_text = f"💬 {node_data.get('content', '')[:20]}"
         elif node_data['type'] == 'menu':
-            opts = "/".join([o['label'] for o in node_data.get('options', [])])
-            display_text = f"🔘 [菜单] {opts}"
-            tags = ('menu',)
+            display_text = f"🔘 [MENU]"
         elif node_data['type'] == 'menu_case':
-            val = node_data.get('value', '?')
-            display_text = f"↳ 选中 [{val}]"
-            tags = ('menu_case',)
-        elif node_data['type'] == 'call':
-            evt = node_data.get('target_event', '未选择')
-            # 获取事件类型标记
-            event_type = "⭐" if node_data.get('is_main_event', False) else "○"
-            display_text = f"🔗 [CALL] {event_type} {evt}"
-            tags = ('call',)
-        elif node_data['type'] == 'image':
-            img = node_data.get('img_key', '未选择')
-            display_text = f"🖼️ [立绘] {img}"
-            tags = ('image',)
-        elif node_data['type'] == 'set':
-            op = node_data.get('operator', '=')
-            val = node_data.get('value', '0')
-            name = node_data.get('var_name', '??')
-            display_text = f"✏️ [SET] {name} {op} {val}"
-            tags = ('set',)
+            display_text = f"↳ 选中 [{node_data.get('value')}]"
+            
+        # 插入节点
         item_id = self.tree_widget.insert(parent_id, 'end', text=display_text, tags=tags)
         self.node_map[item_id] = node_data
         self.parent_map[item_id] = parent_id
         
+        # [关键优化] 根据内存对象的标记恢复展开状态
+        # 我们在 node_data 里存一个临时标记 '_expanded'
+        if node_data.get('_expanded', False):
+            self.tree_widget.item(item_id, open=True)
+            
+        # 默认展开所有根节点
+        if node_data['type'] == 'root':
+            self.tree_widget.item(item_id, open=True)
+            node_data['_expanded'] = True
+
         if 'children' in node_data:
             for child in node_data['children']:
                 self._build_tree_recursive(item_id, child)
-    def modify_menu_opts(self, node, delta):
-        """增加或减少选项数量"""
-        options = node.get('options', [])
-        if delta > 0:
-            new_val = str(len(options) + 1)
-            options.append({'label': '新选项', 'value': new_val})
-            # 同时增加子节点
-            node['children'].append({
-                'type': 'menu_case', 
-                'name': f"当选择 [{new_val}] 时", 
-                'value': new_val, 
-                'children': []
-            })
-        elif delta < 0 and options:
-            options.pop()
-            if node['children']: node['children'].pop()
-            
-        self.render_editor(node, self.tree_widget.selection()[0]) # 刷新右侧
 
-    def save_menu_data(self, node):
-        """保存菜单配置"""
-        new_options = []
-        # 读取输入框
-        for i, (e_lbl, e_val) in enumerate(self.opt_entries):
-            val = e_val.get()
-            label = e_lbl.get()
-            new_options.append({'label': label, 'value': val})
-            
-            # 同步更新对应的子节点名称
-            if i < len(node['children']):
-                node['children'][i]['value'] = val
-                node['children'][i]['name'] = f"当选择 [{val}] 时"
+    def toggle_expand_state(self, node, is_open):
+        """手动更新数据的展开状态标记"""
+        node['_expanded'] = is_open
 
-        node['options'] = new_options
-        self.refresh_tree_view()
-        messagebox.showinfo("提示", "菜单结构已更新")
     # ================= 交互逻辑 =================
 
     def on_tree_select(self, event):
@@ -264,25 +154,184 @@ class KojoEditorApp:
         ui_id = selected[0]
         if ui_id not in self.node_map: return
         node = self.node_map[ui_id]
+        
+        # 同步展开状态到数据
+        # 其实 Treeview 的 Open 事件更好，但 Select 也能辅助
         self.render_editor(node, ui_id)
 
     def show_context_menu(self, event):
         ui_id = self.tree_widget.identify_row(event.y)
         if ui_id:
             self.tree_widget.selection_set(ui_id)
-            # 获取节点类型，如果是 root，禁用某些操作
             node = self.node_map.get(ui_id)
-            if node:
-                # 根节点上不能再加根节点，但可以加内容
-                self.context_menu.post(event.x_root, event.y_root)
+            
+            # [核心约束] 只有容器节点才能添加子节点
+            # 容器类型：root, branch, menu_case
+            # 叶子类型：text, image, call, set, menu(menu比较特殊，它的子节点是自动生成的)
+            is_container = node['type'] in ['root', 'branch', 'menu_case']
+            
+            # 动态启用/禁用菜单项
+            if is_container:
+                self.context_menu.entryconfig("➕ 添加子节点", state="normal")
+                self.context_menu.entryconfig("🧩 插入模板", state="normal")
+            else:
+                self.context_menu.entryconfig("➕ 添加子节点", state="disabled")
+                self.context_menu.entryconfig("🧩 插入模板", state="disabled")
 
-    # ================= 编辑器渲染 =================
+            self.context_menu.post(event.x_root, event.y_root)
 
-    def render_editor(self, node, ui_id):
+    # ================= 节点操作 (增删改) =================
+
+    def add_child_node(self, new_node):
+        parent, ui_id = self.get_selected_node()
+        if not parent: return
+        
+        # [双重保险] 再次检查类型
+        if parent['type'] not in ['root', 'branch', 'menu_case']:
+            messagebox.showwarning("操作无效", "该节点类型不支持添加子节点！")
+            return
+        
+        if 'children' not in parent: parent['children'] = []
+        parent['children'].append(new_node)
+        
+        # 标记父节点为展开
+        parent['_expanded'] = True
+        
+        self.refresh_tree_view()
+        
+        # 选中新节点 (可选)
+        # self.tree_widget.selection_set(new_item_id) 
+
+    # 包装各个添加方法
+    def add_branch(self): self.add_child_node({'type': 'branch', 'name': 'IF', 'children': [], 'condition': 'True'})
+    def add_text_node(self): self.add_child_node({'type': 'text', 'content': '...'})
+    def add_call_node(self): self.add_child_node({'type': 'call', 'target_event': ''})
+    def add_image_node(self): self.add_child_node({'type': 'image', 'img_key': ''})
+    def add_set_node(self): self.add_child_node({'type': 'set', 'var_name': '?', 'operator': '=', 'value': '0'})
+    
+    def add_menu_node(self):
+        # Menu 比较特殊，初始化时自动带 children
+        new_node = {
+            'type': 'menu',
+            'variable': 'res',
+            'options': [{'label': 'Yes', 'value': '1'}, {'label': 'No', 'value': '0'}],
+            'children': []
+        }
+        # 初始化 menu_case
+        for opt in new_node['options']:
+            new_node['children'].append({
+                'type': 'menu_case', 'value': opt['value'], 'children': []
+            })
+        self.add_child_node(new_node)
+
+    # 监听展开事件来更新数据
+    def on_tree_open(self, event):
+        item_id = self.tree_widget.focus() # 获取当前操作的节点
+        if item_id in self.node_map:
+            self.node_map[item_id]['_expanded'] = True
+
+    def on_tree_close(self, event):
+        item_id = self.tree_widget.focus()
+        if item_id in self.node_map:
+            self.node_map[item_id]['_expanded'] = False
+
+    # ... (Render Editor, Save, Load, Export 等方法保持不变，直接复制即可) ...
+    # 为了完整性，下面把之前的 render_editor 等复制过来
+    def get_selected_node(self):
+            selected = self.tree_widget.selection()
+            if not selected:
+                messagebox.showwarning("提示", "请先右键点击一个节点")
+                return None, None
+            ui_id = selected[0]
+            return self.node_map[ui_id], ui_id
+
+    def add_root_node(self):
+        """[新增] 添加一个新的根节点(差分)"""
+        count = len(self.project_data) + 1
+        new_node = {
+            'type': 'root', 
+            'name': f'差分_{count}', 
+            'event_id': f'event_id_{count}',
+            'children': [],
+            '_expanded': True # 默认展开
+        }
+        self.project_data.append(new_node)
+        self.refresh_tree_view()
+    
+    def delete_node(self):
+        node, ui_id = self.get_selected_node()
+        if not node: return
+        if node['type'] == 'root':
+            if messagebox.askyesno("确认", "删除此根节点？"):
+                self.project_data.remove(node)
+                self.refresh_tree_view()
+            return
+        
+        parent_ui = self.parent_map.get(ui_id)
+        if parent_ui:
+            parent = self.node_map[parent_ui]
+            if node in parent['children']:
+                parent['children'].remove(node)
+                self.refresh_tree_view()
+
+    # (Export, Save, Load, Insert Template 同前)
+    # ...
+    def render_editor(self, node,ui_id):
+        # 清空右侧旧控件
         for widget in self.frame_right.winfo_children():
             widget.destroy()
             
-        tk.Label(self.frame_right, text=f"正在编辑: {self.tree_widget.item(ui_id)['text']}", fg="#555").pack(pady=5)
+        # [核心优化] 根据节点类型生成更直观的标题，而不是只显示"未命名"
+        node_type = node.get('type', 'unknown')
+        title_text = "未知节点"
+        title_bg = "#f0f0f0" # 默认背景色
+        title_fg = "#333"    # 默认前景色
+
+        if node_type == 'root':
+            evt_id = node.get('event_id', '未设置')
+            title_text = f"📦 差分编辑器 (ID: {evt_id})"
+            title_bg = "#fff9c4" # 淡黄
+            
+        elif node_type == 'branch':
+            cond = node.get('condition', '未设置')
+            title_text = f"🔷 逻辑判断: {cond}"
+            title_bg = "#e3f2fd" # 淡蓝
+            
+        elif node_type == 'text':
+            title_text = "💬 文本对话编辑器"
+            
+        elif node_type == 'menu':
+            title_text = "🔘 选项菜单配置"
+            title_bg = "#e8f5e9" # 淡绿
+            
+        elif node_type == 'menu_case':
+            val = node.get('value', '?')
+            title_text = f"↳ 分支逻辑: 当玩家选择 [{val}] 时"
+            title_bg = "#f1f8e9"
+            
+        elif node_type == 'call':
+            target = node.get('target_event', '未选择')
+            title_text = f"🔗 事件调用: {target}"
+            
+        elif node_type == 'image':
+            img = node.get('img_key', '未选择')
+            title_text = f"🖼️ 图片显示: {img}"
+            
+        elif node_type == 'set':
+            var = node.get('var_name', '??')
+            title_text = f"✏️ 属性修改: {var}"
+            title_bg = "#fff3e0" # 淡橙
+
+        # 渲染优化后的标题栏
+        header_frame = tk.Frame(self.frame_right, bg=title_bg, pady=5, padx=5)
+        header_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        tk.Label(header_frame, text=title_text, bg=title_bg, fg=title_fg, 
+                font=("微软雅黑", 11, "bold")).pack(anchor=tk.W)
+
+        # ---------------- 下面是原本的编辑器逻辑 ----------------
+        # 请保留原来 if node['type'] == 'root': 之后的所有代码...
+        
 
         if node['type'] == 'root':
             tk.Label(self.frame_right, text="[差分事件设置]", font=('bold', 12)).pack(pady=5)
@@ -595,39 +644,33 @@ class KojoEditorApp:
             node['operator'] = self.cmb_op.get()
             node['value'] = self.entry_val.get()
             
-            v_type = node['var_type']
-            v_name = node['var_name']
-            
             # [新增] 根据类型生成不同的 Python 代码
-            if v_type == 'SYS':
-                # 系统变量直接访问属性
-                # 例如: kojo.SELECTCOM
-                # 注意：有些属性可能返回字符串，最好转 int 比较安全，或者根据情况处理
-                # 这里假设 SELECTCOM 等都是可以比较的
-                # 为了稳健，我们可以统一转 int (如果是 ID 类除外)
-                
-                # 特殊处理：如果是字符串类变量 (NAME, CALLNAME)
-                if v_name in ['NAME', 'CALLNAME']:
-                    var_code = f"kojo.{v_name}"
-                    # 字符串比较时，用户输入的值需要加引号，这里简单处理
-                    # 如果用户输入的是数字，就不加引号；如果是文本，加引号
+            if node['var_type'] == 'SYS':
+                if node['var_name'] in ['NAME', 'CALLNAME']:
                     val = node['value']
-                    if not val.isdigit():
-                        val = f"'{val}'"
-                    node['condition'] = f"{var_code} {node['operator']} {val}"
-                    # 跳过后面的通用逻辑，直接 return 或 continue
-                    # 但为了结构简单，我们这里只生成 var_code
+                    if not val.isdigit(): val = f"'{val}'"
+                    node['condition'] = f"kojo.{node['var_name']} {node['operator']} {val}"
                 else:
-                    # 数值类 (SELECTCOM, TARGET等)
-                    var_code = f"int(kojo.{v_name})"
-                    node['condition'] = f"{var_code} {node['operator']} {node['value']}"
-
+                    node['condition'] = f"int(kojo.{node['var_name']}) {node['operator']} {node['value']}"
             else:
                 # 原有的字典访问逻辑
-                # int(kojo.ABL.get('xxx', 0))
-                var_code = f"int(kojo.{v_type}.get('{v_name}', 0))"
-                node['condition'] = f"{var_code} {node['operator']} {node['value']}"
+                v_scope = node.get('var_scope', 'TARGET')
                 
+                if v_scope == 'TARGET':
+                    code_scope = ""
+                elif v_scope in ['MASTER', 'PLAYER']:
+                    code_scope = f"[kojo.{v_scope}]"
+                else:
+                    code_scope = f"['{v_scope}']"
+                
+                # 兼容 EraDataProxy 索引访问
+                # 如果 scope 为空 (TARGET), data_proxy['TARGET'] 等同于 data_proxy.get
+                # 但为了统一，我们这里生成 kojo.ABL[kojo.TARGET].get
+                if not code_scope:
+                    node['condition'] = f"int(kojo.{node['var_type']}.get('{node['var_name']}', 0)) {node['operator']} {node['value']}"
+                else:
+                    node['condition'] = f"int(kojo.{node['var_type']}{code_scope}.get('{node['var_name']}', 0)) {node['operator']} {node['value']}"
+                    
             self.lbl_preview.config(text=node['condition'])
         elif node['type'] == 'text':
             node['content'] = self.txt_content.get(1.0, tk.END).strip()
@@ -651,7 +694,6 @@ class KojoEditorApp:
                     val = node['value']
                     
                     # 构建代码预览
-                    # 1. 确定对象引用代码
                     if v_scope == 'TARGET':
                         target_code = "" # 默认
                     elif v_scope in ['MASTER', 'PLAYER']:
@@ -659,89 +701,55 @@ class KojoEditorApp:
                     else:
                         target_code = f", chara_id='{v_scope}'"
 
-                    # 2. 生成逻辑
                     if op == '=':
-                        # 直接设置: kojo.CFLAG.set('好感度', 100)
                         code = f"kojo.{v_type}.set('{v_name}', {val}{target_code})"
                     else:
-                        # 增减: 需要先读取，再写入
-                        # current = int(kojo.CFLAG.get('好感度', 0))
-                        # kojo.CFLAG.set('好感度', current + 100)
-                        
-                        # 为了预览简洁，这里只显示逻辑注释
-                        # 实际编译时我们会生成多行代码
                         code = f"# {v_type}:{v_name} {op} {val}"
                         
                     self.lbl_preview.config(text=code)
         self.refresh_tree_view()
         messagebox.showinfo("提示", "节点已更新")
 
-    # ================= 节点操作 =================
+    def modify_menu_opts(self, node, delta):
+        """增加或减少选项数量"""
+        options = node.get('options', [])
+        if delta > 0:
+            new_val = str(len(options) + 1)
+            options.append({'label': '新选项', 'value': new_val})
+            # 同时增加子节点
+            node['children'].append({
+                'type': 'menu_case', 
+                'name': f"当选择 [{new_val}] 时", 
+                'value': new_val, 
+                'children': []
+            })
+        elif delta < 0 and options:
+            options.pop()
+            if node['children']: node['children'].pop()
+            
+        self.render_editor(node, self.node_map.keys().__iter__().__next__()) # 这里的刷新逻辑有点hack，实际应该传正确id
+        # 为了修复刷新问题，我们直接调用 render_editor(node, 当前选中ID)
+        # 获取当前选中的ID
+        sel = self.tree_widget.selection()
+        if sel: self.render_editor(node, sel[0])
 
-    def get_selected_node(self):
-        selected = self.tree_widget.selection()
-        if not selected:
-            # 如果没选中，看是否有根节点，默认选中最后一个根节点，或者提示
-            return None, None
-        ui_id = selected[0]
-        return self.node_map[ui_id], ui_id
+    def save_menu_data(self, node):
+        """保存菜单配置"""
+        new_options = []
+        # 读取输入框
+        for i, (e_lbl, e_val) in enumerate(self.opt_entries):
+            val = e_val.get()
+            label = e_lbl.get()
+            new_options.append({'label': label, 'value': val})
+            
+            # 同步更新对应的子节点名称
+            if i < len(node['children']):
+                node['children'][i]['value'] = val
+                node['children'][i]['name'] = f"当选择 [{val}] 时"
 
-    def add_root_node(self):
-        """[新增] 添加一个新的根节点(差分)"""
-        count = len(self.project_data) + 1
-        new_node = {
-            'type': 'root', 
-            'name': f'差分_{count}', 
-            'event_id': f'event_id_{count}',
-            'children': []
-        }
-        self.project_data.append(new_node)
+        node['options'] = new_options
         self.refresh_tree_view()
-
-    def add_child_node(self, new_node):
-        parent, ui_id = self.get_selected_node()
-        if not parent:
-            messagebox.showwarning("提示", "请先在左侧选择一个插入位置（父节点）")
-            return
-        
-        # 确保 parent 有 children 列表
-        if 'children' not in parent: parent['children'] = []
-        parent['children'].append(new_node)
-        
-        self.refresh_tree_view()
-        if ui_id and self.tree_widget.exists(ui_id):
-            self.tree_widget.item(ui_id, open=True)
-
-    def add_branch(self):
-        self.add_child_node({'type': 'branch', 'name': '新分支', 'children': [], 'var_type': 'ABL', 'var_name': '', 'operator': '>', 'value': '0'})
-
-    def add_text_node(self):
-        self.add_child_node({'type': 'text', 'name': '新对话', 'content': '...', 'color': 'COL_TALK'})
-
-    def add_call_node(self):
-        self.add_child_node({'type': 'call', 'name': '调用事件', 'target_event': ''})
-
-    def add_image_node(self):
-        self.add_child_node({'type': 'image', 'name': '图片', 'img_key': ''})
-
-    def delete_node(self):
-        node, ui_id = self.get_selected_node()
-        if not node: return
-        
-        # 如果是根节点，从 project_data 删除
-        if node['type'] == 'root':
-            if messagebox.askyesno("确认", "确定要删除这个差分及其所有内容吗？"):
-                self.project_data.remove(node)
-                self.refresh_tree_view()
-            return
-
-        # 如果是子节点，从父节点删除
-        parent_ui_id = self.parent_map.get(ui_id)
-        if parent_ui_id and parent_ui_id in self.node_map:
-            parent_node = self.node_map[parent_ui_id]
-            if node in parent_node['children']:
-                parent_node['children'].remove(node)
-                self.refresh_tree_view()
+        messagebox.showinfo("提示", "菜单结构已更新")
 
     # ================= 模板导入 =================
     
@@ -841,19 +849,13 @@ class KojoEditorApp:
                     lines.append(f"{prefix}    pass")
             elif node['type'] == 'menu':
                 # 1. 生成显示代码
-                # 使用列表推导式生成 cs 字符串
-                # this.console.PRINT(this.cs("[1] 是").click("1"), "   ", this.cs("[2] 否").click("2"))
-                
                 menu_code_parts = []
                 for opt in node.get('options', []):
                     label = opt['label']
                     val = opt['value']
-                    # 格式: [值] 文本
                     btn_text = f"[{val}] {label}"
-                    # 生成代码片段: this.cs("...").click("...")
                     menu_code_parts.append(f'this.cs("{btn_text}").click("{val}")')
                 
-                # 拼接代码，中间加空格
                 menu_args = ', "   ", '.join(menu_code_parts)
                 lines.append(f'{prefix}this.console.PRINT({menu_args})')
                 
@@ -861,9 +863,7 @@ class KojoEditorApp:
                 var_name = "menu_res" # 临时变量名
                 lines.append(f'{prefix}{var_name} = this.console.INPUT()')
                 
-                # 3. 生成分支逻辑 (遍历 children)
-                # children[0] 是第一个选项的分支，children[1] 是第二个...
-                
+                # 3. 生成分支逻辑
                 for i, child in enumerate(node.get('children', [])):
                     val = child.get('value', '')
                     if i == 0:
@@ -871,34 +871,22 @@ class KojoEditorApp:
                     else:
                         lines.append(f'{prefix}elif {var_name} == "{val}":')
                     
-                    # 递归编译 menu_case 的子节点
                     if 'children' in child and child['children']:
                         for grand_child in child['children']:
                             self._compile_node(grand_child, lines, indent + 1)
                     else:
                         lines.append(f'{prefix}    pass')
+                        
             elif node['type'] == 'text':
                 color = node.get('color', 'COL_TALK')
                 content_raw = node.get('content', '')
                 
-                # [核心改进] 按换行符切割文本，生成多个 PRINT 语句
-                # splitlines() 会自动处理 \r\n, \n 等各种换行符
                 content_lines = content_raw.splitlines()
-                
-                # 如果内容为空，或者只有空行，至少输出一个空行
-                if not content_lines:
-                    content_lines = [""]
+                if not content_lines: content_lines = [""]
                     
                 for i, line_text in enumerate(content_lines):
-                    # 只有最后一行才添加 INPUT (等待)，前面的行只负责显示
-                    # 除非你希望每行都等待，那就在这里改逻辑
-                    
-                    # 清理首尾空格 (可选，取决于你想不想要保留缩进)
-                    # line_text = line_text.strip() 
-                    
                     lines.append(f'{prefix}this.console.PRINT(f"{line_text}", colors={color})')
                 
-                # 在所有文本打印完后，添加一次 INPUT
                 lines.append(f'{prefix}this.console.INPUT()')
                 
             elif node['type'] == 'call':
@@ -908,19 +896,42 @@ class KojoEditorApp:
             elif node['type'] == 'image':
                 img = node.get('img_key', '')
                 lines.append(f'{prefix}this.console.PRINTIMG("{img}")')
+                
+            elif node['type'] == 'set':
+                v_type = node['var_type']
+                v_scope = node['var_scope']
+                v_name = node['var_name']
+                op = node['operator']
+                val = node['value']
+                
+                if v_scope == 'TARGET':
+                    target_id_code = "kojo.TARGET"
+                elif v_scope in ['MASTER', 'PLAYER']:
+                    target_id_code = f"kojo.{v_scope}"
+                else:
+                    target_id_code = f"'{v_scope}'"
+
+                if op == '=':
+                    lines.append(f"{prefix}kojo.{v_type}.set('{v_name}', {val}, chara_id={target_id_code})")
+                else:
+                    math_op = '+' if op == '+=' else '-'
+                    lines.append(f"{prefix}current_val = int(kojo.{v_type}[{target_id_code}].get('{v_name}', 0))")
+                    lines.append(f"{prefix}new_val = current_val {math_op} int({val})")
+                    lines.append(f"{prefix}kojo.{v_type}.set('{v_name}', new_val, chara_id={target_id_code})")
 
     # ================= 项目存取 =================
     
     def new_project(self):
         # 初始化为一个空的列表 (包含一个默认的根)
-        self.project_data = [{'type': 'root', 'name': '默认差分', 'event_id': '1_初期_未命名', 'children': []}]
+        self.project_data = [{'type': 'root', 'name': '默认差分', 'event_id': '1_初期_未命名', 'children': [], '_expanded': True}]
         self.refresh_tree_view()
 
     def save_project(self):
         file_path = filedialog.asksaveasfilename(defaultextension=".json")
         if file_path:
             with open(file_path, 'w', encoding='utf-8') as f:
-                json.dump(self.project_data, f, indent=4) # 存的是 List
+                # 保存前把 _expanded 这种临时属性清理掉？其实留着也没事，方便下次打开
+                json.dump(self.project_data, f, indent=4) 
 
     def load_project(self):
         file_path = filedialog.askopenfilename(filetypes=[("JSON Files", "*.json")])
@@ -928,7 +939,6 @@ class KojoEditorApp:
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    # 兼容旧版 (如果是 dict，转为 list)
                     if isinstance(data, dict):
                         self.project_data = [data]
                     else:
