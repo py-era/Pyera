@@ -19,7 +19,165 @@ class KojoEditorApp:
         
         self.setup_ui()
         self.new_project() 
+    def save_branch_data(self, node):
+        # 1. 收集 UI 数据
+        # 主条件是 list[0]，附加条件是 list[1:]
+        
+        all_conds_data = []
+        for ui in self.cond_ui_list:
+            data = {
+                'var_type': ui['type'].get(),
+                'var_scope': ui['scope'].get(),
+                'var_name': ui['name'].get(),
+                'operator': ui['op'].get(),
+                'value': ui['val'].get(),
+            }
+            if ui['logic']: # 主条件没有 logic widget
+                data['logic'] = ui['logic'].get()
+            all_conds_data.append(data)
+            
+        # 2. 更新 Node 数据
+        # 主条件
+        main = all_conds_data[0]
+        node.update(main) # 把 var_type 等写入 node 根级
+        
+        # 附加条件
+        node['extra_conds'] = all_conds_data[1:]
+        
+        # 3. 生成 Python 代码字符串
+        full_code = ""
+        
+        for i, data in enumerate(all_conds_data):
+            # 生成单个条件的字符串
+            v_type = data['var_type']
+            v_name = data['var_name']
+            v_scope = data.get('var_scope', 'TARGET')
+            op = data['operator']
+            val = data['value']
+            
+            # 生成左值 (Variable)
+            if v_type == 'SYS':
+                if v_name in ['NAME', 'CALLNAME']:
+                    if not val.isdigit() and not (val.startswith("'") or val.startswith('"')):
+                         val = f"'{val}'"
+                    code_part = f"kojo.{v_name} {op} {val}"
+                else:
+                    code_part = f"int(kojo.{v_name}) {op} {val}"
+            else:
+                # 引用作用域
+                if v_scope == 'TARGET':
+                    scope_code = ""
+                elif v_scope in ['MASTER', 'PLAYER']:
+                    scope_code = f"[kojo.{v_scope}]"
+                else:
+                    scope_code = f"['{v_scope}']"
+                
+                code_part = f"int(kojo.{v_type}{scope_code}.get('{v_name}', 0)) {op} {val}"
+            
+            # 拼接逻辑词
+            if i == 0:
+                full_code = code_part
+            else:
+                logic = data.get('logic', 'and')
+                # 加括号保证优先级，或者简单拼接
+                full_code += f" {logic} {code_part}"
+                
+        node['condition'] = full_code
+        self.lbl_preview.config(text=full_code)
+        
+        self.refresh_tree_view()
+        messagebox.showinfo("提示", "复杂条件已保存")
+    def add_extra_cond(self, node):
+        if 'extra_conds' not in node: node['extra_conds'] = []
+        # 添加默认数据
+        node['extra_conds'].append({
+            'logic': 'and',
+            'var_type': 'ABL',
+            'var_name': '',
+            'operator': '>',
+            'value': '0'
+        })
+        # 刷新编辑器 (重新渲染)
+        ui_id = self.tree_widget.selection()[0]
+        self.render_editor(node, ui_id)
 
+    def remove_last_cond(self, node):
+        if node.get('extra_conds'):
+            node['extra_conds'].pop()
+            ui_id = self.tree_widget.selection()[0]
+            self.render_editor(node, ui_id)
+    def _render_single_cond_row(self, parent, data, is_first=False):
+            row = tk.Frame(parent)
+            row.pack(fill=tk.X, pady=2)
+            
+            # 1. 逻辑词 (AND/OR)
+            cmb_logic = None
+            if not is_first:
+                cmb_logic = ttk.Combobox(row, values=['and', 'or'], width=4, state="readonly")
+                cmb_logic.set(data.get('logic', 'and'))
+                cmb_logic.pack(side=tk.LEFT, padx=2)
+            else:
+                tk.Label(row, text="当", width=4).pack(side=tk.LEFT)
+
+            # 2. 变量类型
+            valid_types = [k for k in self.meta.keys() if k not in ['CHARAS', 'IMAGES', 'EVENTS']]
+            if not valid_types: valid_types = ['ABL']
+            if 'SYS' not in valid_types: valid_types.insert(0, 'SYS')
+            
+            cmb_type = ttk.Combobox(row, values=valid_types, width=7, state="readonly")
+            cmb_type.set(data.get('var_type', valid_types[0]))
+            cmb_type.pack(side=tk.LEFT, padx=1)
+            
+            # 3. 对象 (Scope)
+            # 这里为了简化，我们不搞复杂的显隐联动了，直接都显示，如果是SYS用户自己忽略即可
+            # 或者你可以把联动逻辑加上，但多行联动比较麻烦
+            scope_opts = ['TARGET', 'MASTER', 'PLAYER'] + self.meta.get('CHARAS', [])
+            cmb_scope = ttk.Combobox(row, values=scope_opts, width=7) # 允许输入
+            cmb_scope.set(data.get('var_scope', 'TARGET'))
+            cmb_scope.pack(side=tk.LEFT, padx=1)
+            
+            tk.Label(row, text=":").pack(side=tk.LEFT)
+            
+            # 4. 变量名
+            cmb_name = ttk.Combobox(row, width=10)
+            cmb_name.set(data.get('var_name', ''))
+            cmb_name.pack(side=tk.LEFT, padx=1)
+            
+            # 简单的联动：当类型改变时刷新变量名列表 (利用闭包绑定当前控件)
+            def on_type_change(event):
+                v_t = cmb_type.get()
+                if v_t == 'SYS':
+                    vals = ['SELECTCOM', 'PREVCOM', 'TARGET', 'PLAYER', 'MASTER', 'CHARANUM', 'NO', 'NAME']
+                else:
+                    vals = [str(v) for v in self.meta.get(v_t, [])]
+                cmb_name['values'] = vals
+                if vals: cmb_name.current(0)
+                
+            cmb_type.bind("<<ComboboxSelected>>", on_type_change)
+            # 初始化列表
+            on_type_change(None) 
+            # 恢复之前的值 (因为 on_type_change 会重置)
+            if data.get('var_name'): cmb_name.set(data['var_name'])
+
+            # 5. 运算符
+            cmb_op = ttk.Combobox(row, values=['==', '!=', '>', '<', '>='], width=3, state="readonly")
+            cmb_op.set(data.get('operator', '>'))
+            cmb_op.pack(side=tk.LEFT, padx=1)
+            
+            # 6. 数值
+            ent_val = tk.Entry(row, width=5)
+            ent_val.insert(0, data.get('value', '0'))
+            ent_val.pack(side=tk.LEFT, padx=1)
+            
+            # 保存引用
+            self.cond_ui_list.append({
+                'logic': cmb_logic,
+                'type': cmb_type,
+                'scope': cmb_scope,
+                'name': cmb_name,
+                'op': cmb_op,
+                'val': ent_val
+            })
     def setup_ui(self):
         # --- 工具栏 ---
         toolbar = tk.Frame(self.root, bd=1, relief=tk.RAISED)
@@ -61,6 +219,7 @@ class KojoEditorApp:
         self.menu_add = Menu(self.context_menu, tearoff=0)
         self.menu_add.add_command(label="🔷 分支判断 (IF)", command=self.add_branch)
         self.menu_add.add_command(label="🔘 选项菜单 (MENU)", command=self.add_menu_node)
+        self.menu_add.add_command(label="🎲 随机分支 (RAND)", command=self.add_rand_node)
         self.menu_add.add_command(label="✏️ 修改属性 (SET)", command=self.add_set_node)
         self.menu_add.add_separator()
         self.menu_add.add_command(label="💬 文本 (PRINT)", command=self.add_text_node)
@@ -115,14 +274,26 @@ class KojoEditorApp:
         if node_data['type'] == 'root':
             display_text = f"📦 差分: {node_data.get('event_id', '')}"
         elif node_data['type'] == 'branch':
-            display_text = f"🔷 [IF] {node_data.get('condition', '?')}"
+            # 显示简略信息，如果有多条件显示 "..."
+            cond = node_data.get('condition', '?')
+            if node_data.get('extra_conds'):
+                cond += " ..."
+            display_text = f"🔷 [IF] {cond}"
+            tags = ('branch',)
         elif node_data['type'] == 'text':
             display_text = f"💬 {node_data.get('content', '')[:20]}"
         elif node_data['type'] == 'menu':
             display_text = f"🔘 [MENU]"
         elif node_data['type'] == 'menu_case':
             display_text = f"↳ 选中 [{node_data.get('value')}]"
-            
+        elif node_data['type'] == 'rand':
+            rng = node_data.get('range', '2')
+            display_text = f"🎲 [RAND] 1/{rng}"
+            tags = ('rand',)
+        elif node_data['type'] == 'rand_case':
+            val = node_data.get('value', '?')
+            display_text = f"↳ 结果 [{val}]"
+            tags = ('rand_case',)
         # 插入节点
         item_id = self.tree_widget.insert(parent_id, 'end', text=display_text, tags=tags)
         self.node_map[item_id] = node_data
@@ -168,7 +339,7 @@ class KojoEditorApp:
             # [核心约束] 只有容器节点才能添加子节点
             # 容器类型：root, branch, menu_case
             # 叶子类型：text, image, call, set, menu(menu比较特殊，它的子节点是自动生成的)
-            is_container = node['type'] in ['root', 'branch', 'menu_case']
+            is_container = ['root', 'branch', 'menu_case', 'rand_case']
             
             # 动态启用/禁用菜单项
             if is_container:
@@ -181,13 +352,37 @@ class KojoEditorApp:
             self.context_menu.post(event.x_root, event.y_root)
 
     # ================= 节点操作 (增删改) =================
+    def add_rand_node(self):
+        """添加一个随机分支节点"""
+        parent, ui_id = self.get_selected_node()
+        if not parent: return
+        
+        # 默认创建范围为 2 的随机 (0, 1)
+        new_node = {
+            'type': 'rand',
+            'name': '随机事件',
+            'range': '2',
+            'variable': 'rand_res', # 临时变量名
+            'children': []
+        }
+        
+        # 自动生成子节点 (Case)
+        for i in range(2):
+            case_node = {
+                'type': 'rand_case', 
+                'name': f"当随机到 [{i}] 时", 
+                'value': str(i),
+                'children': []
+            }
+            new_node['children'].append(case_node)
 
+        self.add_child_node(new_node)
     def add_child_node(self, new_node):
         parent, ui_id = self.get_selected_node()
         if not parent: return
         
         # [双重保险] 再次检查类型
-        if parent['type'] not in ['root', 'branch', 'menu_case']:
+        if parent['type'] not in ['root', 'branch', 'menu_case', 'rand_case']:
             messagebox.showwarning("操作无效", "该节点类型不支持添加子节点！")
             return
         
@@ -203,7 +398,16 @@ class KojoEditorApp:
         # self.tree_widget.selection_set(new_item_id) 
 
     # 包装各个添加方法
-    def add_branch(self): self.add_child_node({'type': 'branch', 'name': 'IF', 'children': [], 'condition': 'True'})
+    def add_branch(self):
+        self.add_child_node({
+            'type': 'branch', 
+            'name': 'IF', 
+            'children': [], 
+            # 主条件
+            'var_type': 'ABL', 'var_name': '', 'operator': '>', 'value': '0',
+            # [新增] 附加条件列表 [{'logic': 'and', 'var_type':...}, ...]
+            'extra_conds': [] 
+        })
     def add_text_node(self): self.add_child_node({'type': 'text', 'content': '...'})
     def add_call_node(self): self.add_child_node({'type': 'call', 'target_event': ''})
     def add_image_node(self): self.add_child_node({'type': 'image', 'img_key': ''})
@@ -321,7 +525,26 @@ class KojoEditorApp:
             var = node.get('var_name', '??')
             title_text = f"✏️ 属性修改: {var}"
             title_bg = "#fff3e0" # 淡橙
+        elif node['type'] == 'rand':
+            tk.Label(self.frame_right, text="[随机分支设置]", font=('bold', 12)).pack(pady=5)
+            
+            frame_rand = tk.Frame(self.frame_right)
+            frame_rand.pack(fill=tk.X, padx=5, pady=10)
+            
+            tk.Label(frame_rand, text="随机范围 (0 ~ N-1):").pack(side=tk.LEFT)
+            self.entry_range = tk.Entry(frame_rand, width=5)
+            self.entry_range.insert(0, node.get('range', '2'))
+            self.entry_range.pack(side=tk.LEFT, padx=5)
+            
+            tk.Button(self.frame_right, text="重置并生成分支", 
+                      command=lambda: self.update_rand_branches(node),
+                      bg="#ffecb3").pack(pady=10)
+            
+            tk.Label(self.frame_right, text="⚠️ 点击生成会覆盖当前的子分支！", fg="red").pack()
 
+        elif node['type'] == 'rand_case':
+            tk.Label(self.frame_right, text="这是自动生成的随机结果分支", fg="gray").pack(pady=20)
+            tk.Label(self.frame_right, text=f"当随机数为 {node.get('value')} 时执行").pack()
         # 渲染优化后的标题栏
         header_frame = tk.Frame(self.frame_right, bg=title_bg, pady=5, padx=5)
         header_frame.pack(fill=tk.X, pady=(0, 10))
@@ -349,61 +572,38 @@ class KojoEditorApp:
             tk.Button(self.frame_right, text="保存设置", command=lambda: self.save_node_data(node)).pack(pady=10)
 
         elif node['type'] == 'branch':
-            tk.Label(self.frame_right, text="条件设定", font=('bold', 10)).pack(pady=5)
+            tk.Label(self.frame_right, text="[逻辑判断设置]", font=('bold', 12)).pack(pady=5)
             
-            frame_cond = tk.Frame(self.frame_right)
-            frame_cond.pack(fill=tk.X, padx=5)
+            # --- 条件列表容器 ---
+            self.frame_conds = tk.Frame(self.frame_right)
+            self.frame_conds.pack(fill=tk.BOTH, expand=True, padx=5)
             
-            # 1. 变量类型 [Box 1]
-            valid_types = [k for k in self.meta.keys() if k not in ['CHARAS', 'IMAGES', 'EVENTS']]
-            if not valid_types: valid_types = ['ABL']
-            if 'SYS' not in valid_types: valid_types.insert(0, 'SYS')
+            # 存储所有条件的 UI 控件引用，方便保存时读取
+            # 结构: [(cmb_logic, cmb_type, cmb_scope, cmb_name, cmb_op, ent_val), ...]
+            self.cond_ui_list = []
             
-            self.cmb_var_type = ttk.Combobox(frame_cond, values=valid_types, width=8, state="readonly")
+            # 1. 渲染主条件 (Main Condition)
+            # 主条件没有逻辑词 (AND/OR)，因为它是第一个
+            self._render_single_cond_row(self.frame_conds, node, is_first=True)
             
-            current_type = node.get('var_type', '')
-            if current_type not in valid_types and valid_types: current_type = valid_types[0]
-            self.cmb_var_type.set(current_type)
-            self.cmb_var_type.pack(side=tk.LEFT)
+            # 2. 渲染附加条件 (Extra Conditions)
+            extra_conds = node.get('extra_conds', [])
+            for cond_data in extra_conds:
+                self._render_single_cond_row(self.frame_conds, cond_data, is_first=False)
             
-            # 2. [新增] 对象/作用域选择 [Box 2]
-            # 只有当类型不是 SYS 时才需要选对象
-            self.frame_scope = tk.Frame(frame_cond) # 包一层frame方便隐藏
-            self.frame_scope.pack(side=tk.LEFT)
+            # --- 操作按钮 ---
+            btn_frame = tk.Frame(self.frame_right)
+            btn_frame.pack(fill=tk.X, pady=10)
             
-            tk.Label(self.frame_scope, text=":").pack(side=tk.LEFT)
-            self.cmb_var_scope = ttk.Combobox(self.frame_scope, width=8, state="readonly")
-            # 作用域选项：TARGET, MASTER, PLAYER, ASSI + 具体角色ID
-            scope_opts = ['TARGET', 'MASTER', 'PLAYER', 'ASSI'] + self.meta.get('CHARAS', [])
-            self.cmb_var_scope['values'] = scope_opts
-            self.cmb_var_scope.set(node.get('var_scope', 'TARGET')) # 默认 TARGET
-            self.cmb_var_scope.pack(side=tk.LEFT)
-
-            # 3. 变量名 [Box 3]
-            tk.Label(frame_cond, text=":").pack(side=tk.LEFT)
-            self.cmb_var_name = ttk.Combobox(frame_cond, width=12)
-            self.cmb_var_name.pack(side=tk.LEFT)
+            tk.Button(btn_frame, text="➕ 添加条件 (AND/OR)", command=lambda: self.add_extra_cond(node)).pack(side=tk.LEFT, padx=5)
+            tk.Button(btn_frame, text="➖ 移除最后一条", command=lambda: self.remove_last_cond(node)).pack(side=tk.LEFT, padx=5)
             
-            # 绑定事件：类型改变时 -> 更新变量名列表 + 决定是否显示对象框
-            self.cmb_var_type.bind("<<ComboboxSelected>>", self.on_type_changed)
+            # 预览与保存
+            tk.Label(self.frame_right, text="预览:", fg="gray").pack(anchor=tk.W)
+            self.lbl_preview = tk.Label(self.frame_right, text=node.get('condition', ''), fg="blue", bg="#eee", wraplength=400, justify=tk.LEFT)
+            self.lbl_preview.pack(fill=tk.X, padx=5, pady=2)
             
-            # 4. 运算符 [Box 4]
-            self.cmb_op = ttk.Combobox(frame_cond, values=['==', '!=', '>', '<', '>='], width=3, state="readonly")
-            self.cmb_op.set(node.get('operator', '>'))
-            self.cmb_op.pack(side=tk.LEFT, padx=5)
-            
-            # 5. 数值 [Box 5]
-            self.entry_val = tk.Entry(frame_cond, width=5)
-            self.entry_val.insert(0, node.get('value', '0'))
-            self.entry_val.pack(side=tk.LEFT)
-            
-            self.lbl_preview = tk.Label(self.frame_right, text=node.get('condition', ''), fg="blue", bg="#eee")
-            self.lbl_preview.pack(fill=tk.X, padx=5, pady=5)
-            
-            tk.Button(self.frame_right, text="保存条件", command=lambda: self.save_node_data(node)).pack(pady=5)
-            
-            # 初始化界面状态
-            self.on_type_changed(None, initial_value=node.get('var_name', ''))
+            tk.Button(self.frame_right, text="💾 保存并生成代码", command=lambda: self.save_branch_data(node), bg="#c8e6c9").pack(pady=10)
         elif node['type'] == 'menu':
             tk.Label(self.frame_right, text="[选项菜单设置]", font=('bold', 12)).pack(pady=5)
             
@@ -608,7 +808,29 @@ class KojoEditorApp:
         if hasattr(self, 'txt_content'):
             self.txt_content.insert(tk.INSERT, tag)
             self.txt_content.focus_set()
-
+    def update_rand_branches(self, node):
+        """根据输入的范围重新生成子分支"""
+        try:
+            rng = int(self.entry_range.get())
+            if rng < 1: raise ValueError
+            
+            if messagebox.askyesno("确认", "这将清空当前随机分支下的所有内容，确定吗？"):
+                node['range'] = str(rng)
+                node['children'] = [] # 清空旧的
+                
+                for i in range(rng):
+                    node['children'].append({
+                        'type': 'rand_case',
+                        'name': f"当随机到 [{i}] 时",
+                        'value': str(i),
+                        'children': []
+                    })
+                
+                self.refresh_tree_view()
+                messagebox.showinfo("成功", f"已生成 {rng} 个随机分支")
+                
+        except ValueError:
+            messagebox.showerror("错误", "请输入有效的正整数！")
     def update_var_names(self, event, initial_value=None):
         v_type = self.cmb_var_type.get()
         
@@ -639,39 +861,8 @@ class KojoEditorApp:
             node['event_id'] = self.entry_event_id.get()
             node['name'] = self.entry_name.get() # 更新显示名
         elif node['type'] == 'branch':
-            node['var_type'] = self.cmb_var_type.get()
-            node['var_name'] = self.cmb_var_name.get()
-            node['operator'] = self.cmb_op.get()
-            node['value'] = self.entry_val.get()
-            
-            # [新增] 根据类型生成不同的 Python 代码
-            if node['var_type'] == 'SYS':
-                if node['var_name'] in ['NAME', 'CALLNAME']:
-                    val = node['value']
-                    if not val.isdigit(): val = f"'{val}'"
-                    node['condition'] = f"kojo.{node['var_name']} {node['operator']} {val}"
-                else:
-                    node['condition'] = f"int(kojo.{node['var_name']}) {node['operator']} {node['value']}"
-            else:
-                # 原有的字典访问逻辑
-                v_scope = node.get('var_scope', 'TARGET')
-                
-                if v_scope == 'TARGET':
-                    code_scope = ""
-                elif v_scope in ['MASTER', 'PLAYER']:
-                    code_scope = f"[kojo.{v_scope}]"
-                else:
-                    code_scope = f"['{v_scope}']"
-                
-                # 兼容 EraDataProxy 索引访问
-                # 如果 scope 为空 (TARGET), data_proxy['TARGET'] 等同于 data_proxy.get
-                # 但为了统一，我们这里生成 kojo.ABL[kojo.TARGET].get
-                if not code_scope:
-                    node['condition'] = f"int(kojo.{node['var_type']}.get('{node['var_name']}', 0)) {node['operator']} {node['value']}"
-                else:
-                    node['condition'] = f"int(kojo.{node['var_type']}{code_scope}.get('{node['var_name']}', 0)) {node['operator']} {node['value']}"
-                    
-            self.lbl_preview.config(text=node['condition'])
+            self.save_branch_data(node) # 转发给专用函数
+            return # 记得 return，不走下面的通用刷新
         elif node['type'] == 'text':
             node['content'] = self.txt_content.get(1.0, tk.END).strip()
             node['color'] = self.entry_color.get()
@@ -806,7 +997,7 @@ class KojoEditorApp:
             lines.append("    # --- 常用变量定义 ---")
             lines.append("    master_name = '你'")
             lines.append("    if kojo.MASTER:")
-            lines.append("        master_name = this.console.init.charaters_key.get(kojo.MASTER, {}).get('名前', '你')")
+            lines.append("        master_name = this.console.init.charaters_key.get(kojo.MASTER, {}).get('全名', '你')")
             lines.append("    target_name = kojo.NAME")
             lines.append("    call_name = kojo.CALLNAME")
             lines.append("    # --------------------")
@@ -848,7 +1039,12 @@ class KojoEditorApp:
                 else:
                     lines.append(f"{prefix}    pass")
             elif node['type'] == 'menu':
-                # 1. 生成显示代码
+                # 1. 生成循环头
+                lines.append(f'{prefix}while True:')
+                indent_inner = indent + 1
+                prefix_inner = "    " * indent_inner
+                
+                # 2. 生成显示代码 (在循环内)
                 menu_code_parts = []
                 for opt in node.get('options', []):
                     label = opt['label']
@@ -857,26 +1053,58 @@ class KojoEditorApp:
                     menu_code_parts.append(f'this.cs("{btn_text}").click("{val}")')
                 
                 menu_args = ', "   ", '.join(menu_code_parts)
-                lines.append(f'{prefix}this.console.PRINT({menu_args})')
+                lines.append(f'{prefix_inner}this.console.PRINT({menu_args})')
                 
-                # 2. 生成输入代码
-                var_name = "menu_res" # 临时变量名
-                lines.append(f'{prefix}{var_name} = this.console.INPUT()')
+                # 添加一个默认的退出选项 (防止死循环)
+                # lines.append(f'{prefix_inner}this.console.PRINT(this.cs("[999] 返回").click("999"))')
                 
-                # 3. 生成分支逻辑
+                # 3. 生成输入代码
+                var_name = "menu_res" 
+                lines.append(f'{prefix_inner}{var_name} = this.console.INPUT()')
+                
+                # 4. 生成分支逻辑
+                first_branch = True
                 for i, child in enumerate(node.get('children', [])):
                     val = child.get('value', '')
-                    if i == 0:
-                        lines.append(f'{prefix}if {var_name} == "{val}":')
+                    
+                    # if / elif 结构
+                    if first_branch:
+                        lines.append(f'{prefix_inner}if {var_name} == "{val}":')
+                        first_branch = False
                     else:
-                        lines.append(f'{prefix}elif {var_name} == "{val}":')
+                        lines.append(f'{prefix_inner}elif {var_name} == "{val}":')
+                    
+                    # 递归编译子节点
+                    if 'children' in child and child['children']:
+                        for grand_child in child['children']:
+                            self._compile_node(grand_child, lines, indent_inner + 1)
+                    else:
+                        lines.append(f'{prefix_inner}    pass')
+                    
+                    # [关键] 默认行为：执行完分支后退出菜单？还是继续？
+                    # 通常作为"选项"，选完就该继续剧情了，所以默认 break
+                    lines.append(f'{prefix_inner}    break') 
+            elif node['type'] == 'rand':
+                rng = node.get('range', '2')
+                var_name = f"rand_{id(node)}" # 使用唯一ID防止变量冲突
+                
+                # 1. 生成随机数代码
+                lines.append(f"{prefix}{var_name} = kojo.Rand({rng})")
+                
+                # 2. 生成分支逻辑
+                for i, child in enumerate(node.get('children', [])):
+                    val = child.get('value', '0')
+                    
+                    if i == 0:
+                        lines.append(f"{prefix}if {var_name} == {val}:")
+                    else:
+                        lines.append(f"{prefix}elif {var_name} == {val}:")
                     
                     if 'children' in child and child['children']:
                         for grand_child in child['children']:
                             self._compile_node(grand_child, lines, indent + 1)
                     else:
-                        lines.append(f'{prefix}    pass')
-                        
+                        lines.append(f"{prefix}    pass")
             elif node['type'] == 'text':
                 color = node.get('color', 'COL_TALK')
                 content_raw = node.get('content', '')
@@ -948,7 +1176,25 @@ class KojoEditorApp:
                 messagebox.showerror("错误", f"读取失败: {e}")
 
 if __name__ == "__main__":
+    import sys
+    import os
+    
     root = tk.Tk()
+    
+    # 默认元数据 (用于直接双击运行测试)
     meta = {'ABL': ['C感觉'], 'CHARAS': ['0'], 'IMAGES': []}
+    
+    # [核心修改] 读取命令行参数传入的 JSON 文件
+    if len(sys.argv) > 1:
+        json_path = sys.argv[1]
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    meta = json.load(f)
+                # 读取后可以删除临时文件，也可以留着调试
+                # os.remove(json_path) 
+            except Exception as e:
+                messagebox.showerror("错误", f"元数据加载失败: {e}")
+    
     app = KojoEditorApp(root, meta)
     root.mainloop()
